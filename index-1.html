@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ניהול תחזוקת צי רכב</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f6b6b">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="צי רכב">
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#f1f3f0;--card:#fff;--tx:#14212b;--mut:#5d6b76;--bd:#dde2dd;--pri:#0f6b6b;--ok:#1a7f4b;--warn:#8a5a00;--bad:#b3261e;--okb:#e0f3e8;--warnb:#fcefcf;--badb:#fbe3e1;--odb:#14212b;--odt:#f1f3f0;
@@ -45,6 +52,10 @@ th{color:var(--mut);font-weight:500;font-size:12px}tr:last-child td{border:0}
 .tags{display:flex;gap:6px;flex-wrap:wrap}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--tx);color:var(--bg);padding:10px 18px;border-radius:8px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
 #toast.on{opacity:1}
+details{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:2px 14px;margin-bottom:10px}
+summary{cursor:pointer;padding:12px 0;font-weight:500}
+details ol{margin:0 0 12px;padding-inline-start:20px}details li{margin-bottom:8px}details a{color:var(--tx);text-decoration:underline}
+pre{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:10px;overflow-x:auto;font-size:12px;direction:ltr;text-align:left;margin:8px 0}
 .remind{border-color:var(--warn);background:var(--warnb);color:var(--warn)}
 a.btn{text-decoration:none;display:inline-block}
 #ov{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;padding:16px;z-index:9}
@@ -118,7 +129,8 @@ function alerts(){
  D.vehicles.forEach(v=>{const s=svcStatus(v);if(s.lvl)a.push({v,...s});docs(v).forEach(x=>a.push({v,...x}))});
  return a.sort((x,y)=>y.lvl-x.lvl);
 }
-const REM_DAYS=30;
+const REM_DAYS=30,JUMP=20000;
+const jumpMsg=()=>`הקפיצה בק"מ גדולה מדי (מעל ${fmt(JUMP)}). בדוק שהמספר נכון, ואם הוא נכון פנה למנהל`;
 function kmAge(v){
  const t=[v.created_at,...(D.kmu||[]).filter(u=>u.vehicle_id===v.id).map(u=>u.created_at),...D.services.filter(x=>x.vehicle_id===v.id).map(x=>x.created_at)].filter(Boolean).map(x=>new Date(x).getTime());
  return t.length?Math.floor((Date.now()-Math.max(...t))/DAY):0;
@@ -168,6 +180,7 @@ function viewManage(){
  <form class="card form" data-f="veh"><h3>הוספת רכב</h3><label>מספר רישוי<input name="plate" required></label><label>דגם<input name="model" required></label><label>שנה<input type="number" name="year" min="1990" max="2035"></label>
  <label>נהג<select name="driverId">${opts('')}</select></label>
  <label>ק"מ נוכחי<input type="number" name="km" min="0" required></label><label>תוקף טסט<input type="date" name="test"></label><label>תוקף ביטוח<input type="date" name="ins"></label><button class="btn">הוספת רכב</button></form>
+ <form class="card form" data-f="kmfix"><h3>עריכת ק"מ לרכב</h3><label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)} · ${fmt(v.km)} ק"מ</option>`).join('')}</select></label><label>ק"מ חדש<input type="number" name="km" min="0" required></label><button class="btn">עדכון ק"מ</button></form>
  <h2>שיוך נהגים לרכבים</h2><div class="card list">${D.vehicles.map(v=>`<div class="row"><span>${vname(v)}</span><select data-assign="${v.id}">${opts(v.driver_id)}</select></div>`).join('')||'עוד אין רכבים'}</div>
  <h2>נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>`;
 }
@@ -182,12 +195,61 @@ function viewDriver(){
  <form class="card form" data-f="km"><input type="hidden" name="vid" value="${v.id}"><h3>עדכון קילומטראז'</h3><label>ק"מ נוכחי<input type="number" name="km" min="${v.km}" value="${v.km}" required></label><button class="btn">עדכון ק"מ</button></form>
  ${svcForm(v.id)}<h2>היסטוריית טיפולים</h2>${svcTable(D.services.filter(x=>x.vehicle_id===v.id))}`;
 }
+function viewHelp(){
+ const sb0='https://supabase.com/dashboard/project/rodlmlsdgwqyxqaimkfm';
+ const sql1=`insert into public.profiles (id, full_name)
+select u.id, coalesce(u.raw_user_meta_data->>'full_name', u.email, '')
+from auth.users u
+where not exists (select 1 from public.profiles p where p.id = u.id)
+returning id, full_name, role;`;
+ const sql2=`update auth.users
+set encrypted_password = extensions.crypt('NEW_PASSWORD', extensions.gen_salt('bf')),
+    email_confirmed_at = coalesce(email_confirmed_at, now())
+where email = 'user@example.com'
+returning email;`;
+ const sql3=`update public.services
+set km = 123000
+where km = 1230000
+  and vehicle_id = (select id from public.vehicles where plate = '11111111')
+returning service_date, type, km;`;
+ const pre=t=>`<pre>${esc(t)}</pre><button class="btn ghost sm" data-a="copy">העתקה</button>`;
+ return `<details open><summary>הוספת נהג חדש</summary><ol>
+ <li>ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. <a href="${sb0}/auth/users" target="_blank" rel="noopener">פתיחה</a></li>
+ <li>באתר: ניהול ← נהגים. אם הנהג לא מופיע, מריצים ב-SQL Editor את הקוד הבא ומרעננים. <a href="${sb0}/sql/new" target="_blank" rel="noopener">פתיחת SQL Editor</a>${pre(sql1)}</li>
+ <li>נותנים שם וטלפון ולוחצים שמירה.</li>
+ <li>משייכים לרכב: ניהול ← שיוך נהגים לרכבים.</li>
+ <li>שולחים לנהג את הכתובת, האימייל והסיסמה הזמנית, ומבקשים להוסיף קיצור למסך הבית מהכתובת הזו (⋮ ← הוסף למסך הבית).</li></ol></details>
+ <details><summary>עדכון האתר (גרסה חדשה)</summary><ol>
+ <li>מורידים את קובץ index.html החדש מהשיחה עם Claude.</li>
+ <li>פותחים את <a href="https://github.com/kfirfleet/fleet/upload/main" target="_blank" rel="noopener">דף ההעלאה ב-GitHub</a> ובוחרים את הקובץ (אחרונים).</li>
+ <li>אם השם הוא בדיוק index.html, לוחצים Commit changes. אם השם שונה (למשל index-.html), מוחקים את הישן ב-GitHub ומתקנים את השם החדש ל-index.html.</li>
+ <li>מחכים דקה-שתיים, סוגרים ופותחים את האתר מחדש. לבדיקה בלי זיכרון ישן: לשונית גלישה בסתר.</li>
+ <li>תמיד פותחים את האתר מהכתובת kfirfleet.github.io/fleet ולא מקובץ בטלפון.</li></ol></details>
+ <details><summary>תיקון ק"מ</summary><ol>
+ <li>ק"מ של רכב: ניהול ← עריכת ק"מ לרכב.</li>
+ <li>ק"מ שגוי בטיפול שנרשם: ב-SQL Editor מחליפים במספרים ובמספר הרישוי ומריצים.${pre(sql3)}</li></ol></details>
+ <details><summary>איפוס סיסמה למשתמש</summary><ol>
+ <li>ב-SQL Editor מחליפים את NEW_PASSWORD ואת האימייל (באותיות קטנות, גרשיים נשארים) ומריצים. את הסיסמה לא שומרים בשאילתה.${pre(sql2)}</li>
+ <li>סיסמת החשבון ב-Supabase עצמו מאפסים במסך הכניסה שלו, ב"שכחת סיסמה".</li></ol></details>
+ <details><summary>תזכורות ק"מ חודשיות</summary><ol>
+ <li>בסקירה מופיעה רשימה "ממתינים לעדכון ק"מ" עם נהגים שלא עדכנו 30 יום.</li>
+ <li>כפתור "שלח תזכורת" פותח וואטסאפ מוכן. לשם כך צריך מספר טלפון לנהג ב-ניהול ← נהגים.</li></ol></details>
+ <details><summary>גיבוי נתונים ידני</summary><ol>
+ <li>ב-SQL Editor מריצים select * from services; (וכך גם vehicles, km_updates, profiles).</li>
+ <li>בתוצאות לוחצים Export ← CSV ושומרים את הקובץ.</li>
+ <li>בתוכנית החינמית אין גיבוי אוטומטי, ולכן כדאי לעשות את זה אחת לכמה שבועות.</li></ol></details>
+ <details><summary>בעיות נפוצות</summary><ol>
+ <li>"אימייל או סיסמה שגויים": אימייל באותיות קטנות ואיפוס סיסמה לפי המדריך.</li>
+ <li>נהג חדש לא מופיע: להריץ את שאילתת הפרופילים.</li>
+ <li>רואים גרסה ישנה: לפתוח מהכתובת, או בלשונית גלישה בסתר.</li>
+ <li>"הקפיצה בק"מ גדולה מדי": לתקן ב-ניהול ← עריכת ק"מ לרכב.</li></ol></details>`;
+}
 function render(){
  const m=me.role==='manager';
  $('#who').innerHTML=`<small>${esc(me.full_name)}</small><button class="btn ghost sm" data-a="out">יציאה</button>`;
- const tabs=m?[['dash','סקירה'],['hist','טיפולים'],['mng','ניהול']]:[];
+ const tabs=m?[['dash','סקירה'],['hist','טיפולים'],['mng','ניהול'],['help','מדריך']]:[];
  $('#tabs').innerHTML=tabs.map(([k,t])=>`<button class="tab ${ui.tab===k?'on':''}" data-a="tab" data-v="${k}">${t}</button>`).join('');
- $('#view').innerHTML=m?(ui.tab==='dash'?viewDash():ui.tab==='hist'?svcForm()+'<h2>כל הטיפולים</h2>'+svcTable(D.services):viewManage()):viewDriver();
+ $('#view').innerHTML=m?(ui.tab==='dash'?viewDash():ui.tab==='hist'?svcForm()+'<h2>כל הטיפולים</h2>'+svcTable(D.services):ui.tab==='help'?viewHelp():viewManage()):viewDriver();
 }
 let tt;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2400)}
@@ -210,8 +272,9 @@ function shrink(file){
 }
 const H={
  async login(o){const{error}=await sb.auth.signInWithPassword({email:o.email.trim().toLowerCase(),password:o.password});if(error){console.error(error);return[0,error.name==='AuthRetryableFetchError'?'אין חיבור לשרת. פתח את האתר בכתובת רגילה בדפדפן':'אימייל או סיסמה שגויים']}await start();return[1,'']},
- async km(o){const{error}=await sb.from('km_updates').insert({vehicle_id:o.vid,km:+o.km});return res(error,'הק"מ עודכן')},
+ async km(o){const v=byId(o.vid);if(v&&+o.km>v.km+JUMP)return[0,jumpMsg()];const{error}=await sb.from('km_updates').insert({vehicle_id:o.vid,km:+o.km});return res(error,'הק"מ עודכן')},
  async svc(o){
+  const v0=byId(o.vid);if(me.role!=='manager'&&v0&&+o.km>v0.km+JUMP)return[0,jumpMsg()];
   let path=null;
   const rf=o.receipt&&o.receipt.size?o.receipt:(o.receipt2&&o.receipt2.size?o.receipt2:null);
   if(me.role!=='manager'&&!rf)return[0,'צריך לצרף צילום קבלה'];
@@ -228,6 +291,11 @@ const H={
   return res(error,'הטיפול נשמר')
  },
  async veh(o){const{error}=await sb.from('vehicles').insert({plate:o.plate.trim(),model:o.model.trim(),year:num(o.year),driver_id:o.driverId||null,km:+o.km,test_date:o.test||null,insurance_date:o.ins||null});return res(error,'הרכב נוסף')},
+ async kmfix(o){
+  const v=byId(o.vid),k=+o.km;if(!v)return[0,'הרכב לא נמצא'];
+  if(k>v.km+100000)return[0,'הקילומטראז\' גבוה מדי, בדוק שוב'];
+  const{error}=await sb.from('vehicles').update({km:k}).eq('id',o.vid);return res(error,'הק"מ עודכן')
+ },
  async rules(o){const{error}=await sb.from('settings').update({service_interval_km:+o.km,service_interval_months:+o.months}).eq('id',true);return res(error,'הכללים עודכנו')}
 };
 document.addEventListener('submit',async e=>{
@@ -247,6 +315,9 @@ document.addEventListener('click',async e=>{
   const{data,error}=await sb.storage.from('invoices').createSignedUrl(b.dataset.p,300);
   if(error){toast('לא ניתן לפתוח את הקבלה');return}
   $('#ov').innerHTML=`<img src="${data.signedUrl}" alt="קבלה">`;$('#ov').classList.add('on');
+ }
+ if(a==='copy'){
+  try{await navigator.clipboard.writeText(b.previousElementSibling.textContent);toast('הועתק')}catch(e){toast('לא ניתן להעתיק, סמן ידנית')}
  }
  if(a==='out'){await sb.auth.signOut();showLogin()}
  if(a==='rename'){
