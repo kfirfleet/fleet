@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ניהול תחזוקת צי רכב</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f6b6b">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="צי רכב">
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#f1f3f0;--card:#fff;--tx:#14212b;--mut:#5d6b76;--bd:#dde2dd;--pri:#0f6b6b;--ok:#1a7f4b;--warn:#8a5a00;--bad:#b3261e;--okb:#e0f3e8;--warnb:#fcefcf;--badb:#fbe3e1;--odb:#14212b;--odt:#f1f3f0;
@@ -57,7 +64,7 @@ a.btn{text-decoration:none;display:inline-block}
 </head>
 <body>
 <header><h1>ניהול תחזוקת צי רכב</h1><div id="who"></div></header>
-<main><div id="tabs"></div><div id="view"><div class="card">טוען...</div></div></main>
+<main><div id="tabs"></div><div id="instbar"></div><div id="view"><div class="card">טוען...</div></div></main>
 <div id="ov"></div>
 <div id="toast" role="status"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -85,16 +92,18 @@ async function init(){
 async function start(){
  const{data:{user}}=await sb.auth.getUser();
  if(!user){showLogin();return}
- await load(user.id);render();
+ await load(user.id);render();track(user.id);
 }
 async function load(uid){
  const r=await Promise.all([sb.from('profiles').select('*'),sb.from('vehicles').select('*').order('plate'),sb.from('services').select('*').order('service_date',{ascending:false}),sb.from('settings').select('*').maybeSingle(),sb.from('km_updates').select('vehicle_id,created_at').order('created_at',{ascending:false}).limit(2000)]);
  const bad=r.find(x=>x.error);if(bad){console.error(bad.error);toast('שגיאה בטעינת הנתונים')}
  D.profiles=r[0].data||[];D.vehicles=r[1].data||[];D.services=r[2].data||[];if(r[3].data)D.settings=r[3].data;D.kmu=r[4].data||[];
  me=D.profiles.find(p=>p.id===uid)||{id:uid,role:'driver',full_name:''};
+ D.inst=[];
+ if(me.role==='manager'){const q=await sb.from('app_installs').select('*');D.inst=q.error?null:(q.data||[])}
 }
 function showLogin(){
- me=null;$('#who').innerHTML='';$('#tabs').innerHTML='';
+ me=null;$('#who').innerHTML='';$('#tabs').innerHTML='';drawInst();
  $('#view').innerHTML=`<form class="card form login" data-f="login"><h3>כניסה למערכת</h3><label>אימייל<input type="email" name="email" autocomplete="username" required></label><label>סיסמה<input type="password" name="password" autocomplete="current-password" required></label><button class="btn">כניסה</button></form>`;
 }
 
@@ -128,11 +137,33 @@ function kmAge(v){
  const t=[v.created_at,...(D.kmu||[]).filter(u=>u.vehicle_id===v.id).map(u=>u.created_at),...D.services.filter(x=>x.vehicle_id===v.id).map(x=>x.created_at)].filter(Boolean).map(x=>new Date(x).getTime());
  return t.length?Math.floor((Date.now()-Math.max(...t))/DAY):0;
 }
-function waLink(p,name){
+function waTo(p,m){
  let n=String(p||'').replace(/\D/g,'');if(!n)return '';
  if(n.startsWith('0'))n='972'+n.slice(1);
- const m=`שלום ${name}, תזכורת חודשית: נא לעדכן קילומטראז' באפליקציית הצי: ${location.origin+location.pathname}`;
  return `https://wa.me/${n}?text=${encodeURIComponent(m)}`;
+}
+const siteUrl=()=>location.origin+location.pathname;
+const waLink=(p,name)=>waTo(p,`שלום ${name}, תזכורת חודשית: נא לעדכן קילומטראז' באפליקציית הצי: ${siteUrl()}`);
+const waInstall=(p,name)=>waTo(p,`שלום ${name}, כדי להתקין את אפליקציית צי הרכב בטלפון: 1) פותחים ב-Chrome את ${siteUrl()} 2) מתחברים 3) לוחצים על הכפתור "התקנה" שמופיע בראש המסך, או על ⋮ ואז על "התקנת אפליקציה". אחר כך פותחים אותה מהאייקון במסך הבית.`);
+let instEv=null,instDone=false;
+function drawInst(){
+ const el=$('#instbar');if(!el)return;
+ if(!me||me.role!=='driver'||instDone||isApp()){el.innerHTML='';return}
+ const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+ const how=instEv?'':`<br><small>${ios?'לחצו על כפתור השיתוף ואז על "הוספה למסך הבית".':'לחצו על ⋮ בדפדפן ואז על "התקנת אפליקציה".'} אם כבר התקנתם, פתחו את האפליקציה מהאייקון במסך הבית.</small>`;
+ el.innerHTML=`<div class="card"><b>התקינו את האפליקציה בטלפון</b><br><small>היא תיפתח ישר מהאייקון, בלי להקליד כתובת.</small>${how}${instEv?'<div class="tags" style="margin-top:10px"><button class="btn sm" data-a="install">התקנה</button></div>':''}</div>`;
+}
+function isApp(){
+ try{return ['standalone','fullscreen','minimal-ui'].some(m=>matchMedia(`(display-mode: ${m})`).matches)||navigator.standalone===true}catch(e){return false}
+}
+async function track(uid,force){
+ try{
+  const now=new Date().toISOString(),app=isApp(),row={user_id:uid,last_seen:now};
+  if(force||app)row.installed=true;
+  if(app)row.last_app_open=now;
+  const{error}=await sb.from('app_installs').upsert(row,{onConflict:'user_id'});
+  if(error)console.warn('app_installs',error.message);
+ }catch(e){console.warn(e)}
 }
 function kmRemind(){
  const l=D.vehicles.filter(v=>v.driver_id).map(v=>({v,age:kmAge(v)})).filter(x=>x.age>=REM_DAYS).sort((a,b)=>b.age-a.age);
@@ -140,6 +171,20 @@ function kmRemind(){
  return `<h2>ממתינים לעדכון ק"מ</h2><div class="card list">${l.map(({v,age})=>{
   const p=D.profiles.find(x=>x.id===v.driver_id)||{},w=waLink(p.phone,p.full_name||'');
   return `<div class="row"><span>${vname(v)} <small>${esc(p.full_name||'')} · לפני ${age} ימים</small></span>${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת</a>`:'<small>אין מספר טלפון</small>'}</div>`}).join('')}</div>`;
+}
+function installBox(){
+ if(D.inst===null)return `<h2>התקנת האפליקציה</h2><div class="card"><small>כדי לראות מי התקין את האפליקציה צריך ליצור טבלה אחת ב-Supabase. ההוראות במדריך, תחת "מי התקין את האפליקציה".</small></div>`;
+ const ds=D.profiles.filter(p=>p.role==='driver');
+ if(!ds.length)return '';
+ const get=p=>D.inst.find(x=>x.user_id===p.id);
+ const rows=ds.map(p=>{
+  const r=get(p),w=waInstall(p.phone,p.full_name||'');
+  const st=r&&r.installed?['ok','מותקן']:r?['warn','נכנס מהדפדפן']:['bad','לא נראה עדיין'];
+  const seen=r?`נכנס לאחרונה ${fd(r.last_seen)}`:'';
+  const btn=r&&r.installed?'':(w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח הוראות</a>`:'<small>אין מספר טלפון</small>');
+  return `<div class="row"><span>${esc(p.full_name||'ללא שם')} <small>${seen}</small></span><span class="tags"><span class="b ${st[0]}">${st[1]}</span>${btn}</span></div>`}).join('');
+ const n=ds.filter(p=>(get(p)||{}).installed).length;
+ return `<h2>התקנת האפליקציה (${n} מתוך ${ds.length})</h2><div class="card list">${rows}</div><p style="margin:-4px 0 12px"><small>"לא נראה עדיין": לא נכנס לאתר מאז העדכון. "נכנס מהדפדפן": נכנס, אבל לא פתח כאפליקציה מותקנת.</small></p>`;
 }
 function svcForm(vid){
  return `<form class="card form" data-f="svc"><h3>רישום טיפול</h3>
@@ -164,7 +209,7 @@ function viewDash(){
  const cost=D.services.filter(s=>new Date(s.service_date).getFullYear()===yr).reduce((t,s)=>t+Number(s.cost||0),0);
  return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><div class="card"><small>דורשים טיפול</small><b>${al.length}</b></div><div class="card"><small>עלות טיפולים השנה</small><b>₪${fmt(cost)}</b></div></div>
  <h2>דורש טיפול</h2>${al.length?`<div class="card list">${al.map(x=>`<div class="row"><span>${vname(x.v)} <small>${drv(x.v.driver_id)}</small></span><span class="b ${cls(x.lvl)}">${x.txt}</span></div>`).join('')}</div>`:'<div class="card">אין התראות פתוחות</div>'}
- ${kmRemind()}<h2>הצי</h2><div class="card scroll"><table><tr><th>רכב</th><th>נהג</th><th>ק"מ</th><th>סטטוס טיפול</th></tr>${D.vehicles.map(v=>{const s=svcStatus(v);return `<tr><td>${vname(v)}</td><td>${drv(v.driver_id)}</td><td>${fmt(v.km)}</td><td><span class="b ${cls(s.lvl)}">${s.txt}</span></td></tr>`}).join('')||'<tr><td colspan="4">עוד לא נוספו רכבים</td></tr>'}</table></div>`;
+ ${kmRemind()}${installBox()}<h2>הצי</h2><div class="card scroll"><table><tr><th>רכב</th><th>נהג</th><th>ק"מ</th><th>סטטוס טיפול</th></tr>${D.vehicles.map(v=>{const s=svcStatus(v);return `<tr><td>${vname(v)}</td><td>${drv(v.driver_id)}</td><td>${fmt(v.km)}</td><td><span class="b ${cls(s.lvl)}">${s.txt}</span></td></tr>`}).join('')||'<tr><td colspan="4">עוד לא נוספו רכבים</td></tr>'}</table></div>`;
 }
 function viewManage(){
  const drivers=D.profiles.filter(p=>p.role==='driver');
@@ -205,13 +250,30 @@ set km = 123000
 where km = 1230000
   and vehicle_id = (select id from public.vehicles where plate = '11111111')
 returning service_date, type, km;`;
+ const sqlA=`create table if not exists public.app_installs (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  installed boolean not null default false,
+  last_seen timestamptz not null default now(),
+  last_app_open timestamptz
+);
+alter table public.app_installs enable row level security;
+grant select, insert, update on public.app_installs to authenticated;`;
+ const sqlB=`drop policy if exists app_installs_select on public.app_installs;
+drop policy if exists app_installs_insert on public.app_installs;
+drop policy if exists app_installs_update on public.app_installs;
+create policy app_installs_select on public.app_installs for select to authenticated
+  using (user_id = auth.uid() or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'manager'));
+create policy app_installs_insert on public.app_installs for insert to authenticated
+  with check (user_id = auth.uid());
+create policy app_installs_update on public.app_installs for update to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());`;
  const pre=t=>`<pre>${esc(t)}</pre><button class="btn ghost sm" data-a="copy">העתקה</button>`;
  return `<details open><summary>הוספת נהג חדש</summary><ol>
  <li>ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. <a href="${sb0}/auth/users" target="_blank" rel="noopener">פתיחה</a></li>
  <li>באתר: ניהול ← נהגים. אם הנהג לא מופיע, מריצים ב-SQL Editor את הקוד הבא ומרעננים. <a href="${sb0}/sql/new" target="_blank" rel="noopener">פתיחת SQL Editor</a>${pre(sql1)}</li>
  <li>נותנים שם וטלפון ולוחצים שמירה.</li>
  <li>משייכים לרכב: ניהול ← שיוך נהגים לרכבים.</li>
- <li>שולחים לנהג את הכתובת, האימייל והסיסמה הזמנית, ומבקשים להוסיף קיצור למסך הבית מהכתובת הזו (⋮ ← הוסף למסך הבית).</li></ol></details>
+ <li>שולחים לנהג את הכתובת, האימייל והסיסמה הזמנית, ומבקשים להתקין את האפליקציה מהכתובת הזו (⋮ ← התקנת אפליקציה, ואם אין אז הוספה למסך הבית).</li></ol></details>
  <details><summary>עדכון האתר (גרסה חדשה)</summary><ol>
  <li>מורידים את קובץ index.html החדש מהשיחה עם Claude.</li>
  <li>פותחים את <a href="https://github.com/kfirfleet/fleet/upload/main" target="_blank" rel="noopener">דף ההעלאה ב-GitHub</a> ובוחרים את הקובץ (אחרונים).</li>
@@ -227,6 +289,13 @@ returning service_date, type, km;`;
  <details><summary>תזכורות ק"מ חודשיות</summary><ol>
  <li>בסקירה מופיעה רשימה "ממתינים לעדכון ק"מ" עם נהגים שלא עדכנו 30 יום.</li>
  <li>כפתור "שלח תזכורת" פותח וואטסאפ מוכן. לשם כך צריך מספר טלפון לנהג ב-ניהול ← נהגים.</li></ol></details>
+ <details><summary>מי התקין את האפליקציה</summary><ol>
+ <li>פעם אחת בלבד: ב-SQL Editor מריצים את שני הקטעים הבאים, אחד אחרי השני. הקוד בטוח להרצה חוזרת, אז אם הדבקה נחתכה אפשר פשוט להריץ שוב. <a href="${sb0}/sql/new" target="_blank" rel="noopener">פתיחת SQL Editor</a>${pre(sqlA)}${pre(sqlB)}</li>
+ <li>אחרי זה, בסקירה מופיע כרטיס "התקנת האפליקציה" עם מצב של כל נהג.</li>
+ <li>"מותקן": הנהג פתח את האפליקציה מהאייקון. "נכנס מהדפדפן": נכנס לאתר אבל עוד לא התקין. "לא נראה עדיין": לא נכנס לאתר מאז העדכון.</li>
+ <li>לנהג שעוד לא התקין יש כפתור "שלח הוראות" שפותח וואטסאפ מוכן.</li>
+ <li>לנהגים מופיע בראש האפליקציה כרטיס "התקינו את האפליקציה בטלפון". בכרום באנדרואיד יש בו כפתור "התקנה" שמתקין בלחיצה אחת. אי אפשר להסתיר אותו: הוא נעלם רק כשהנהג פותח את האפליקציה מהאייקון.</li>
+ <li>המצב מתעדכן רק כשהנהג פותח את האתר או האפליקציה. נהג שהתקין ולא פתח עדיין לא יופיע כמותקן.</li></ol></details>
  <details><summary>גיבוי נתונים ידני</summary><ol>
  <li>ב-SQL Editor מריצים select * from services; (וכך גם vehicles, km_updates, profiles).</li>
  <li>בתוצאות לוחצים Export ← CSV ושומרים את הקובץ.</li>
@@ -243,6 +312,7 @@ function render(){
  const tabs=m?[['dash','סקירה'],['hist','טיפולים'],['mng','ניהול'],['help','מדריך']]:[];
  $('#tabs').innerHTML=tabs.map(([k,t])=>`<button class="tab ${ui.tab===k?'on':''}" data-a="tab" data-v="${k}">${t}</button>`).join('');
  $('#view').innerHTML=m?(ui.tab==='dash'?viewDash():ui.tab==='hist'?svcForm()+'<h2>כל הטיפולים</h2>'+svcTable(D.services):ui.tab==='help'?viewHelp():viewManage()):viewDriver();
+ drawInst();
 }
 let tt;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2400)}
@@ -304,7 +374,7 @@ document.addEventListener('click',async e=>{
  const b=e.target.closest('[data-a]');if(!b)return;
  const a=b.dataset.a;
  if(a==='tab'){ui.tab=b.dataset.v;render()}
- if(a==='rc'){
+ if(a==='install'&&instEv){const ev=instEv;instEv=null;ev.prompt();try{await ev.userChoice}catch(e){}drawInst()} if(a==='rc'){
   const{data,error}=await sb.storage.from('invoices').createSignedUrl(b.dataset.p,300);
   if(error){toast('לא ניתן לפתוח את הקבלה');return}
   $('#ov').innerHTML=`<img src="${data.signedUrl}" alt="קבלה">`;$('#ov').classList.add('on');
@@ -324,6 +394,8 @@ document.addEventListener('change',async e=>{
  const{error}=await sb.from('vehicles').update({driver_id:e.target.value||null}).eq('id',id);
  const[ok,msg]=res(error,'השיוך עודכן');if(ok){await load(me.id);render()}toast(msg);
 });
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();instEv=e;drawInst()});
+window.addEventListener('appinstalled',()=>{instEv=null;instDone=true;drawInst();if(sb&&me)track(me.id,true)});
 init();
 </script>
 </body>
