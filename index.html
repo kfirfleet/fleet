@@ -37,7 +37,7 @@ small{color:var(--mut);font-size:12px}
 table{width:100%;border-collapse:collapse;font-size:14px;white-space:nowrap}
 th,td{text-align:start;padding:10px 12px;border-bottom:1px solid var(--bd)}
 th{color:var(--mut);font-weight:500;font-size:12px}tr:last-child td{border:0}
-.form{display:grid;gap:10px}label{display:grid;gap:4px;font-size:13px;color:var(--mut)}
+.form,.more{display:grid;gap:10px}.more[hidden]{display:none}label{display:grid;gap:4px;font-size:13px;color:var(--mut)}
 .login{max-width:380px;margin:40px auto}
 .btn{font:inherit;font-weight:500;background:var(--pri);color:#fff;border:0;border-radius:6px;padding:10px 14px;cursor:pointer}
 .btn:disabled{opacity:.6}
@@ -144,13 +144,13 @@ function waTo(p,m){
 }
 const siteUrl=()=>location.origin+location.pathname;
 const waLink=(p,name)=>waTo(p,`שלום ${name}, תזכורת חודשית: נא לעדכן קילומטראז' באפליקציית הצי: ${siteUrl()}`);
-const waInstall=(p,name)=>waTo(p,`שלום ${name}, כדי להתקין את אפליקציית צי הרכב בטלפון: 1) פותחים ב-Chrome את ${siteUrl()} 2) מתחברים 3) לוחצים על הכפתור "התקנה" שמופיע בראש המסך, או על ⋮ ואז על "התקנת אפליקציה". אחר כך פותחים אותה מהאייקון במסך הבית.`);
+const waInstall=(p,name)=>waTo(p,`שלום ${name}, כדי להתקין את אפליקציית צי הרכב בטלפון: 1) פותחים את הקישור ${siteUrl()} 2) מתחברים 3) באנדרואיד (Chrome): לוחצים על הכפתור "התקנה" שמופיע בראש המסך, או על שלוש הנקודות ⋮ ואז על "התקנת אפליקציה". באייפון (Safari): לוחצים על שלוש הנקודות ⋯ ואז על "שיתוף", "הוספה למסך הבית", משאירים דלוק "פתיחה כאפליקציית אינטרנט" ולוחצים "הוספה". 4) אחר כך פותחים את האפליקציה מהאייקון במסך הבית.`);
 let instEv=null,instDone=false;
 function drawInst(){
  const el=$('#instbar');if(!el)return;
  if(!me||me.role!=='driver'||instDone||isApp()){el.innerHTML='';return}
  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
- const how=instEv?'':`<br><small>${ios?'לחצו על כפתור השיתוף ואז על "הוספה למסך הבית".':'לחצו על ⋮ בדפדפן ואז על "התקנת אפליקציה".'} אם כבר התקנתם, פתחו את האפליקציה מהאייקון במסך הבית.</small>`;
+ const how=instEv?'':`<br><small>${ios?'ב-Safari לחצו על שלוש הנקודות ⋯ (או על כפתור השיתוף), ואז על "שיתוף" ו"הוספה למסך הבית". השאירו דלוק "פתיחה כאפליקציית אינטרנט".':'לחצו על ⋮ בדפדפן ואז על "התקנת אפליקציה".'} אם כבר התקנתם, פתחו את האפליקציה מהאייקון במסך הבית.</small>`;
  el.innerHTML=`<div class="card"><b>התקינו את האפליקציה בטלפון</b><br><small>היא תיפתח ישר מהאייקון, בלי להקליד כתובת.</small>${how}${instEv?'<div class="tags" style="margin-top:10px"><button class="btn sm" data-a="install">התקנה</button></div>':''}</div>`;
 }
 function isApp(){
@@ -189,14 +189,15 @@ function installBox(){
 function svcForm(vid){
  return `<form class="card form" data-f="svc"><h3>רישום טיפול</h3>
  ${vid?`<input type="hidden" name="vid" value="${vid}">`:`<label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)}</option>`).join('')}</select></label>`}
- <label>סוג טיפול<select name="type">${Object.entries(TYPES).map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}</select></label>
+ <label>סוג טיפול<select name="type" required><option value="" selected disabled>בחרו סוג טיפול</option>${Object.entries(TYPES).map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}</select></label>
+ <div class="more" hidden>
  <label>תאריך<input type="date" name="date" value="${today()}" required></label>
  <label>ק"מ בטיפול<input type="number" name="km" min="0" required></label>
  <label>עלות (₪)<input type="number" name="cost" min="0" step="any"></label>
  <label>מוסך<input name="garage"></label>
  <label>צילום קבלה${me.role==='manager'?' (אופציונלי)':''}<input type="file" name="receipt" accept="image/*" capture="environment"></label>
  <label>או בחירת תמונה מהגלריה<input type="file" name="receipt2" accept="image/*"></label>
- <button class="btn">שמירת טיפול</button></form>`;
+ <button class="btn">שמירת טיפול</button></div></form>`;
 }
 function svcTable(list){
  return `<div class="card scroll"><table><tr><th>תאריך</th><th>רכב</th><th>סוג</th><th>ק"מ</th><th>עלות</th><th>מוסך</th><th>קבלה</th></tr>${
@@ -394,6 +395,7 @@ document.addEventListener('change',async e=>{
  const{error}=await sb.from('vehicles').update({driver_id:e.target.value||null}).eq('id',id);
  const[ok,msg]=res(error,'השיוך עודכן');if(ok){await load(me.id);render()}toast(msg);
 });
+document.addEventListener('change',e=>{const t=e.target;if(t.matches&&t.matches('form[data-f="svc"] select[name="type"]')){const m=t.form.querySelector('.more');if(m)m.hidden=!t.value}});
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();instEv=e;drawInst()});
 window.addEventListener('appinstalled',()=>{instEv=null;instDone=true;drawInst();if(sb&&me)track(me.id,true)});
 init();
