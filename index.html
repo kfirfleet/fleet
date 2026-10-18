@@ -37,6 +37,8 @@ small{color:var(--mut);font-size:12px}
 table{width:100%;border-collapse:collapse;font-size:14px;white-space:nowrap}
 th,td{text-align:start;padding:10px 12px;border-bottom:1px solid var(--bd)}
 th{color:var(--mut);font-weight:500;font-size:12px}tr:last-child td{border:0}
+label.filebtn{display:inline-block;text-align:center;cursor:pointer}.filebtn input{display:none}
+.steps{margin:8px 0 10px;padding-inline-start:22px;font-size:14px;line-height:1.6}.steps li{margin-bottom:6px}
 .form,.more{display:grid;gap:10px}.more[hidden]{display:none}label{display:grid;gap:4px;font-size:13px;color:var(--mut)}
 .login{max-width:380px;margin:40px auto}
 .btn{font:inherit;font-weight:500;background:var(--pri);color:#fff;border:0;border-radius:6px;padding:10px 14px;cursor:pointer}
@@ -144,13 +146,24 @@ function waTo(p,m){
 }
 const siteUrl=()=>location.origin+location.pathname;
 const waLink=(p,name)=>waTo(p,`שלום ${name}, תזכורת חודשית: נא לעדכן קילומטראז' באפליקציית הצי: ${siteUrl()}`);
-const waInstall=(p,name)=>waTo(p,`שלום ${name}, כדי להתקין את אפליקציית צי הרכב בטלפון: 1) פותחים את הקישור ${siteUrl()} 2) מתחברים 3) באנדרואיד (Chrome): לוחצים על הכפתור "התקנה" שמופיע בראש המסך, או על שלוש הנקודות ⋮ ואז על "התקנת אפליקציה". באייפון (Safari): לוחצים על שלוש הנקודות ⋯ ואז על "שיתוף", "הוספה למסך הבית", משאירים דלוק "פתיחה כאפליקציית אינטרנט" ולוחצים "הוספה". 4) אחר כך פותחים את האפליקציה מהאייקון במסך הבית.`);
+const waInstall=(p,name)=>waTo(p,`שלום ${name},
+כדי להתקין את אפליקציית צי הרכב בטלפון:
+
+1. פותחים את הקישור (באייפון חשוב לפתוח ב-Safari):
+${siteUrl()}
+
+2. מתחברים עם האימייל והסיסמה.
+
+3. אחרי ההתחברות מופיע למעלה כרטיס "התקינו את האפליקציה בטלפון". עושים בדיוק מה שכתוב בו, צעד אחרי צעד.
+
+4. מעכשיו פותחים את האפליקציה רק מהאייקון החדש במסך הבית.`);
 let instEv=null,instDone=false;
 function drawInst(){
  const el=$('#instbar');if(!el)return;
  if(!me||me.role!=='driver'||instDone||isApp()){el.innerHTML='';return}
  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
- const how=instEv?'':`<br><small>${ios?'ב-Safari לחצו על שלוש הנקודות ⋯ (או על כפתור השיתוף), ואז על "שיתוף" ו"הוספה למסך הבית". השאירו דלוק "פתיחה כאפליקציית אינטרנט".':'לחצו על ⋮ בדפדפן ואז על "התקנת אפליקציה".'} אם כבר התקנתם, פתחו את האפליקציה מהאייקון במסך הבית.</small>`;
+ const steps=ios?['פותחים את האתר ב-Safari (אייקון המצפן הכחול).','לוחצים על כפתור השיתוף (ריבוע עם חץ למעלה). אם אין כפתור כזה, לוחצים על שלוש הנקודות ⋯ ליד שורת הכתובת, ואז על "שיתוף".','גוללים למטה ולוחצים על "הוספה למסך הבית".','משאירים דלוק את "פתיחה כאפליקציית אינטרנט" ולוחצים "הוספה" למעלה.']:['לוחצים על שלוש הנקודות ⋮ בפינה העליונה של הדפדפן.','לוחצים על "התקנת אפליקציה" (או "הוספה למסך הבית").','לוחצים "התקנה".'];
+ const how=instEv?'<br><small>לוחצים על הכפתור, ואחרי זה על "התקנה" בחלון שייפתח.</small>':`<ol class="steps">${steps.map(s=>`<li>${s}</li>`).join('')}</ol><small>מעכשיו פותחים את האפליקציה רק מהאייקון החדש במסך הבית. אם כבר התקנתם, פתחו אותה משם.</small>`;
  el.innerHTML=`<div class="card"><b>התקינו את האפליקציה בטלפון</b><br><small>היא תיפתח ישר מהאייקון, בלי להקליד כתובת.</small>${how}${instEv?'<div class="tags" style="margin-top:10px"><button class="btn sm" data-a="install">התקנה</button></div>':''}</div>`;
 }
 function isApp(){
@@ -212,6 +225,10 @@ function viewDash(){
  <h2>דורש טיפול</h2>${al.length?`<div class="card list">${al.map(x=>`<div class="row"><span>${vname(x.v)} <small>${drv(x.v.driver_id)}</small></span><span class="b ${cls(x.lvl)}">${x.txt}</span></div>`).join('')}</div>`:'<div class="card">אין התראות פתוחות</div>'}
  ${kmRemind()}${installBox()}<h2>הצי</h2><div class="card scroll"><table><tr><th>רכב</th><th>נהג</th><th>ק"מ</th><th>סטטוס טיפול</th></tr>${D.vehicles.map(v=>{const s=svcStatus(v);return `<tr><td>${vname(v)}</td><td>${drv(v.driver_id)}</td><td>${fmt(v.km)}</td><td><span class="b ${cls(s.lvl)}">${s.txt}</span></td></tr>`}).join('')||'<tr><td colspan="4">עוד לא נוספו רכבים</td></tr>'}</table></div>`;
 }
+function licBox(){
+ if(D.vehicles.length&&!('license_path' in D.vehicles[0]))return `<h2>רישיון רכב</h2><div class="card"><small>כדי לשמור צילום רישיון לכל רכב צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "רישיון רכב".</small></div>`;
+ return `<h2>רישיון רכב</h2><div class="card list">${D.vehicles.map(v=>`<div class="row"><span>${vname(v)}<br><small>${v.license_path?'הועלה ב-'+fd(v.license_at):'עוד לא הועלה'}</small></span><span class="tags">${v.license_path?`<button class="btn sm" data-a="rc" data-p="${esc(v.license_path)}">צפייה</button>`:''}<label class="btn ghost sm filebtn">${v.license_path?'החלפה':'העלאה'}<input type="file" accept="image/*" data-lic="${v.id}"></label></span></div>`).join('')||'<small>עוד אין רכבים</small>'}</div>`;
+}
 function viewManage(){
  const drivers=D.profiles.filter(p=>p.role==='driver');
  const opts=sel=>`<option value="">ללא</option>`+drivers.map(p=>`<option value="${p.id}"${p.id===sel?' selected':''}>${esc(p.full_name)}</option>`).join('');
@@ -221,6 +238,7 @@ function viewManage(){
  <label>ק"מ נוכחי<input type="number" name="km" min="0" required></label><label>תוקף טסט<input type="date" name="test"></label><label>תוקף ביטוח<input type="date" name="ins"></label><button class="btn">הוספת רכב</button></form>
  <form class="card form" data-f="kmfix"><h3>עריכת ק"מ לרכב</h3><label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)} · ${fmt(v.km)} ק"מ</option>`).join('')}</select></label><label>ק"מ חדש<input type="number" name="km" min="0" required></label><button class="btn">עדכון ק"מ</button></form>
  <h2>שיוך נהגים לרכבים</h2><div class="card list">${D.vehicles.map(v=>`<div class="row"><span>${vname(v)}</span><select data-assign="${v.id}">${opts(v.driver_id)}</select></div>`).join('')||'עוד אין רכבים'}</div>
+ ${licBox()}
  <h2>נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>`;
 }
 function viewDriver(){
@@ -268,6 +286,18 @@ create policy app_installs_insert on public.app_installs for insert to authentic
   with check (user_id = auth.uid());
 create policy app_installs_update on public.app_installs for update to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());`;
+ const sqlC=`alter table public.vehicles
+  add column if not exists license_path text,
+  add column if not exists license_at timestamptz;`;
+ const sqlD=`drop policy if exists lic_mgr_insert on storage.objects;
+drop policy if exists lic_mgr_select on storage.objects;
+drop policy if exists lic_mgr_delete on storage.objects;
+create policy lic_mgr_insert on storage.objects for insert to authenticated
+  with check (bucket_id = 'invoices' and public.is_manager());
+create policy lic_mgr_select on storage.objects for select to authenticated
+  using (bucket_id = 'invoices' and public.is_manager());
+create policy lic_mgr_delete on storage.objects for delete to authenticated
+  using (bucket_id = 'invoices' and public.is_manager());`;
  const pre=t=>`<pre>${esc(t)}</pre><button class="btn ghost sm" data-a="copy">העתקה</button>`;
  return `<details open><summary>הוספת נהג חדש</summary><ol>
  <li>ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. <a href="${sb0}/auth/users" target="_blank" rel="noopener">פתיחה</a></li>
@@ -297,6 +327,12 @@ create policy app_installs_update on public.app_installs for update to authentic
  <li>לנהג שעוד לא התקין יש כפתור "שלח הוראות" שפותח וואטסאפ מוכן.</li>
  <li>לנהגים מופיע בראש האפליקציה כרטיס "התקינו את האפליקציה בטלפון". בכרום באנדרואיד יש בו כפתור "התקנה" שמתקין בלחיצה אחת. אי אפשר להסתיר אותו: הוא נעלם רק כשהנהג פותח את האפליקציה מהאייקון.</li>
  <li>המצב מתעדכן רק כשהנהג פותח את האתר או האפליקציה. נהג שהתקין ולא פתח עדיין לא יופיע כמותקן.</li></ol></details>
+ <details><summary>רישיון רכב</summary><ol>
+ <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. <a href="${sb0}/sql/new" target="_blank" rel="noopener">פתיחת SQL Editor</a>${pre(sqlC)}</li>
+ <li>אחרי זה: ניהול ← רישיון רכב. ליד כל רכב לוחצים "העלאה", ומצלמים את הרישיון או בוחרים תמונה מהגלריה.</li>
+ <li>כשמתקבל רישיון חדש (למשל אחרי טסט שנתי) לוחצים "החלפה". התמונה הקודמת נמחקת.</li>
+ <li>לצפייה לוחצים "צפייה". הרישיון מוצג רק למנהל.</li>
+ <li>רק אם ההעלאה נכשלת: מריצים גם את הקטע הבא ומנסים שוב.${pre(sqlD)}</li></ol></details>
  <details><summary>גיבוי נתונים ידני</summary><ol>
  <li>ב-SQL Editor מריצים select * from services; (וכך גם vehicles, km_updates, profiles).</li>
  <li>בתוצאות לוחצים Export ← CSV ושומרים את הקובץ.</li>
@@ -321,11 +357,11 @@ function res(e,ok){
  if(!e)return[1,ok];console.error(e);const m=e.message||'';
  return[0,m.includes('cannot decrease')?'הקילומטראז\' לא יכול לרדת':e.code==='23505'?'מספר הרישוי כבר קיים':'הפעולה נכשלה, נסה שוב'];
 }
-function shrink(file){
+function shrink(file,max=1600){
  return new Promise((ok,no)=>{
   const img=new Image(),u=URL.createObjectURL(file);
   img.onload=()=>{
-   const k=Math.min(1,1600/Math.max(img.width,img.height)),c=document.createElement('canvas');
+   const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');
    c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
    c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);
    c.toBlob(b=>b?ok(b):no(new Error('blob')),'image/jpeg',0.8);
@@ -378,7 +414,7 @@ document.addEventListener('click',async e=>{
  if(a==='install'&&instEv){const ev=instEv;instEv=null;ev.prompt();try{await ev.userChoice}catch(e){}drawInst()} if(a==='rc'){
   const{data,error}=await sb.storage.from('invoices').createSignedUrl(b.dataset.p,300);
   if(error){toast('לא ניתן לפתוח את הקבלה');return}
-  $('#ov').innerHTML=`<img src="${data.signedUrl}" alt="קבלה">`;$('#ov').classList.add('on');
+  $('#ov').innerHTML=`<img src="${data.signedUrl}" alt="מסמך">`;$('#ov').classList.add('on');
  }
  if(a==='copy'){
   try{await navigator.clipboard.writeText(b.previousElementSibling.textContent);toast('הועתק')}catch(e){toast('לא ניתן להעתיק, סמן ידנית')}
@@ -394,6 +430,21 @@ document.addEventListener('change',async e=>{
  const id=e.target.dataset.assign;if(!id)return;
  const{error}=await sb.from('vehicles').update({driver_id:e.target.value||null}).eq('id',id);
  const[ok,msg]=res(error,'השיוך עודכן');if(ok){await load(me.id);render()}toast(msg);
+});
+document.addEventListener('change',async e=>{
+ const t=e.target,vid=t.dataset&&t.dataset.lic;if(!vid||!t.files||!t.files[0])return;
+ const f=t.files[0],old=(byId(vid)||{}).license_path;t.value='';
+ toast('מעלה את הרישיון...');
+ let path=null;
+ try{
+  const blob=await shrink(f,2200);path=`${vid}/license-${crypto.randomUUID()}.jpg`;
+  const{error:ue}=await sb.storage.from('invoices').upload(path,blob,{contentType:'image/jpeg'});
+  if(ue){console.error(ue);toast('העלאת הרישיון נכשלה. הפרטים במדריך, תחת "רישיון רכב"');return}
+ }catch(err){console.error(err);toast('לא ניתן לעבד את התמונה');return}
+ const{error}=await sb.from('vehicles').update({license_path:path,license_at:new Date().toISOString()}).eq('id',vid);
+ if(error){console.error(error);await sb.storage.from('invoices').remove([path]);toast((error.message||'').includes('license_')?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "רישיון רכב"':'השמירה נכשלה, נסה שוב');return}
+ if(old){try{await sb.storage.from('invoices').remove([old])}catch(err){console.error(err)}}
+ await load(me.id);render();toast('הרישיון נשמר');
 });
 document.addEventListener('change',e=>{const t=e.target;if(t.matches&&t.matches('form[data-f="svc"] select[name="type"]')){const m=t.form.querySelector('.more');if(m)m.hidden=!t.value}});
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();instEv=e;drawInst()});
