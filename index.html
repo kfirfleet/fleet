@@ -71,7 +71,7 @@ a.btn{text-decoration:none;display:inline-block}
 </head>
 <body>
 <header><h1>ניהול תחזוקת צי רכב</h1><div id="who"></div></header>
-<main><div id="tabs"></div><div id="instbar"></div><div id="view"><div class="card">טוען...</div></div></main>
+<main><div id="tabs"></div><div id="instbar"></div><div id="pushbar"></div><div id="view"><div class="card">טוען...</div></div></main>
 <div id="ov"></div>
 <div id="toast" role="status"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -99,7 +99,7 @@ async function init(){
 async function start(){
  const{data:{user}}=await sb.auth.getUser();
  if(!user){showLogin();return}
- await load(user.id);render();track(user.id);
+ await load(user.id);render();track(user.id);pushSync();
 }
 async function load(uid){
  const r=await Promise.all([sb.from('profiles').select('*'),sb.from('vehicles').select('*').order('plate'),sb.from('services').select('*').order('service_date',{ascending:false}),sb.from('settings').select('*').maybeSingle(),sb.from('km_updates').select('vehicle_id,created_at').order('created_at',{ascending:false}).limit(2000)]);
@@ -107,10 +107,11 @@ async function load(uid){
  D.profiles=r[0].data||[];D.vehicles=r[1].data||[];D.services=r[2].data||[];if(r[3].data)D.settings=r[3].data;D.kmu=r[4].data||[];
  me=D.profiles.find(p=>p.id===uid)||{id:uid,role:'driver',full_name:''};
  D.inst=[];
- if(me.role==='manager'){const q=await sb.from('app_installs').select('*');D.inst=q.error?null:(q.data||[])}
+ D.push=null;
+ if(me.role==='manager'){const q=await sb.from('app_installs').select('*');D.inst=q.error?null:(q.data||[]);const w=await sb.from('push_subs').select('user_id');D.push=w.error?null:(w.data||[])}
 }
 function showLogin(){
- me=null;$('#who').innerHTML='';$('#tabs').innerHTML='';drawInst();
+ me=null;$('#who').innerHTML='';$('#tabs').innerHTML='';drawInst();drawPush();
  $('#view').innerHTML=`<form class="card form login" data-f="login"><h3>כניסה למערכת</h3><label>אימייל<input type="email" name="email" autocomplete="username" required></label><label>סיסמה<input type="password" name="password" autocomplete="current-password" required></label><button class="btn">כניסה</button></form>`;
 }
 
@@ -177,6 +178,57 @@ async function track(uid,force){
   const{error}=await sb.from('app_installs').upsert(row,{onConflict:'user_id'});
   if(error)console.warn('app_installs',error.message);
  }catch(e){console.warn(e)}
+}
+const PUSH_OK=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+const key2buf=k=>Uint8Array.from(atob((k+'='.repeat((4-k.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+const PUSH_SETUP='ההתראות עדיין לא הוגדרו בשרת. ההוראות במדריך, תחת "התראות על עדכון ק"מ"';
+async function pushReg(){try{return await navigator.serviceWorker.register('sw.js')}catch(e){console.warn(e);return null}}
+async function pushState(){
+ if(!PUSH_OK())return'unsupported';
+ if(Notification.permission==='denied')return'denied';
+ if(Notification.permission!=='granted')return'off';
+ try{const reg=await navigator.serviceWorker.getRegistration();return reg&&await reg.pushManager.getSubscription()?'on':'off'}catch(e){return'off'}
+}
+async function pushSave(sub){
+ const j=sub.toJSON();
+ const{error}=await sb.from('push_subs').upsert({user_id:me.id,endpoint:j.endpoint,p256dh:j.keys.p256dh,auth:j.keys.auth},{onConflict:'endpoint'});
+ if(error)console.warn('push_subs',error.message);
+ return!error;
+}
+async function pushSync(){
+ try{
+  if(!PUSH_OK()||Notification.permission!=='granted'||!me)return;
+  const reg=await pushReg();const sub=reg&&await reg.pushManager.getSubscription();
+  if(sub)await pushSave(sub);
+ }catch(e){console.warn(e)}
+}
+async function pushEnable(){
+ try{
+  if(!PUSH_OK())return[0,'הטלפון הזה לא תומך בהתראות. באייפון צריך קודם להתקין את האפליקציה במסך הבית'];
+  const perm=await Notification.requestPermission();
+  if(perm!=='granted')return[0,'לא אושרו התראות. אפשר לאשר אותן בהגדרות הדפדפן'];
+  const reg=await pushReg();if(!reg)return[0,'לא ניתן להפעיל התראות במכשיר הזה'];
+  await navigator.serviceWorker.ready;
+  const{data,error}=await sb.functions.invoke('km-reminders',{body:{mode:'key'}});
+  if(error||!data||!data.key){console.error(error);return[0,PUSH_SETUP]}
+  let sub=await reg.pushManager.getSubscription();
+  if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key2buf(data.key)});
+  return await pushSave(sub)?[1,'ההתראות הופעלו']:[0,PUSH_SETUP];
+ }catch(e){console.error(e);return[0,'לא ניתן להפעיל התראות במכשיר הזה']}
+}
+async function drawPush(){
+ const el=$('#pushbar');if(!el)return;
+ if(!me||me.role!=='driver'){el.innerHTML='';return}
+ const st=await pushState();
+ el.innerHTML=st==='off'?`<div class="card"><b>התראות על עדכון ק"מ</b><br><small>פעם בחודש תקבלו התראה לעדכן את הק"מ של הרכב.</small><div class="tags" style="margin-top:10px"><button class="btn sm" data-a="pushon">הפעלת התראות</button></div></div>`:'';
+}
+function pushBox(){
+ const h=`<h2 id="sec-push">התראות על עדכון ק"מ`;
+ if(!Array.isArray(D.push))return h+`</h2><div class="card"><small>כדי לשלוח התראות לנהגים צריך הגדרה חד-פעמית ב-Supabase. ההוראות במדריך, תחת "התראות על עדכון ק"מ".</small></div>`;
+ const ds=D.profiles.filter(p=>p.role==='driver'),on=new Set(D.push.map(x=>x.user_id));
+ const rows=ds.map(p=>`<div class="row"><span>${esc(p.full_name||'ללא שם')}</span><span class="b ${on.has(p.id)?'ok':'warn'}">${on.has(p.id)?'התראות פעילות':'בלי התראות'}</span></div>`).join('');
+ return `${h} (${ds.filter(p=>on.has(p.id)).length} מתוך ${ds.length})</h2><div class="card list">${rows||'<small>עוד אין נהגים</small>'}</div>
+ <div class="card"><small>ב-1 בכל חודש בבוקר נשלחת התראה לנהגים שלא עדכנו ק"מ ב-20 הימים האחרונים. נהג בלי התראות פעילות מקבל תזכורת רק בוואטסאפ, מכפתור "שלח תזכורת" בסקירה.</small><div class="tags" style="margin-top:10px"><button class="btn sm" data-a="pushnow">שליחה עכשיו</button><button class="btn ghost sm" data-a="pushtest">בדיקה אצלי</button><button class="btn ghost sm" data-a="pushon">הפעלה במכשיר הזה</button></div></div>`;
 }
 function attention(){
  return D.vehicles.map(v=>{
@@ -290,7 +342,7 @@ function viewManage(){
  <form id="sec-kmfix" class="card form" data-f="kmfix"><h3>עריכת ק"מ לרכב</h3><label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)} · ${fmt(v.km)} ק"מ</option>`).join('')}</select></label><label>ק"מ חדש<input type="number" name="km" min="0" required></label><button class="btn">עדכון ק"מ</button></form>
  <h2 id="sec-assign">שיוך נהגים לרכבים</h2><div class="card list">${D.vehicles.map(v=>`<div class="row"><span>${vname(v)}</span><select data-assign="${v.id}">${opts(v.driver_id)}</select></div>`).join('')||'עוד אין רכבים'}</div>
  ${licBox()}
- <h2 id="sec-drivers">נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>${installBox()}`;
+ <h2 id="sec-drivers">נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>${installBox()}${pushBox()}`;
 }
 function viewDriver(){
  const v=D.vehicles[0];
@@ -349,6 +401,262 @@ create policy lic_mgr_select on storage.objects for select to authenticated
   using (bucket_id = 'invoices' and public.is_manager());
 create policy lic_mgr_delete on storage.objects for delete to authenticated
   using (bucket_id = 'invoices' and public.is_manager());`;
+ const sqlP=`create table if not exists public.push_subs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.push_subs enable row level security;
+grant select, insert, update, delete on public.push_subs to authenticated;
+grant all on public.push_subs to service_role;
+drop policy if exists push_subs_own on public.push_subs;
+drop policy if exists push_subs_mgr on public.push_subs;
+create policy push_subs_own on public.push_subs for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy push_subs_mgr on public.push_subs for select to authenticated
+  using (public.is_manager());
+
+create table if not exists public.app_secrets (
+  key text primary key,
+  value text not null
+);
+alter table public.app_secrets enable row level security;
+revoke all on public.app_secrets from anon, authenticated;
+grant all on public.app_secrets to service_role;
+insert into public.app_secrets (key, value)
+values ('cron', replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''))
+on conflict (key) do nothing;
+
+create or replace function public.km_stale_drivers(min_days int default 20)
+returns table (driver_id uuid, plate text, model text, age_days int)
+language sql stable security definer set search_path = '' as $$
+  select t.driver_id, t.plate, t.model, t.age_days from (
+    select v.driver_id, v.plate, v.model,
+      floor(extract(epoch from (now() - greatest(
+        v.created_at,
+        coalesce((select max(k.created_at) from public.km_updates k where k.vehicle_id = v.id), v.created_at),
+        coalesce((select max(s.created_at) from public.services s where s.vehicle_id = v.id), v.created_at)
+      ))) / 86400)::int as age_days
+    from public.vehicles v
+    where v.driver_id is not null
+  ) t
+  where t.age_days >= min_days
+$$;
+revoke execute on function public.km_stale_drivers(int) from public, anon, authenticated;
+grant execute on function public.km_stale_drivers(int) to service_role;`;
+ const sqlQ=`create extension if not exists pg_cron;
+create extension if not exists pg_net;
+select cron.schedule('km-reminders', '0 7 1 * *', $$
+  select net.http_post(
+    url := 'https://rodlmlsdgwqyxqaimkfm.supabase.co/functions/v1/km-reminders',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-cron-secret', (select value from public.app_secrets where key = 'cron')
+    ),
+    body := '{"mode":"cron"}'::jsonb
+  );
+$$);`;
+ const sqlR1=`select net.http_post(
+  url := 'https://rodlmlsdgwqyxqaimkfm.supabase.co/functions/v1/km-reminders',
+  headers := jsonb_build_object(
+    'Content-Type', 'application/json',
+    'x-cron-secret', (select value from public.app_secrets where key = 'cron')
+  ),
+  body := '{"mode":"cron","dry":true}'::jsonb
+);`;
+ const sqlR2=`select status_code, content::text from net._http_response order by id desc limit 1;`;
+ const kmFnCode=String.raw`// km-reminders: התראות לטלפון על עדכון ק"מ (Web Push). לא צריך מפתחות חיצוניים.
+// חשוב: אחרי הפריסה לכבות את Verify JWT של הפונקציה (הפונקציה בודקת הרשאות בעצמה).
+import { createClient } from 'npm:@supabase/supabase-js@2'
+
+const SITE = 'https://kfirfleet.github.io/fleet/'
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
+}
+const reply = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...cors, 'Content-Type': 'application/json' },
+  })
+
+const enc = new TextEncoder()
+const b64u = (b: Uint8Array) =>
+  btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+const unb64u = (s: string) =>
+  Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4)), (c) =>
+    c.charCodeAt(0))
+const cat = (...a: Uint8Array[]) => {
+  const o = new Uint8Array(a.reduce((n, x) => n + x.length, 0))
+  let i = 0
+  for (const x of a) {
+    o.set(x, i)
+    i += x.length
+  }
+  return o
+}
+async function hkdf(salt: Uint8Array, ikm: Uint8Array, info: Uint8Array, len: number) {
+  const k = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits'])
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, k, len * 8))
+}
+
+// הצפנת ההודעה לפי תקן Web Push (RFC 8291, aes128gcm)
+async function encrypt(text: string, p256dh: string, auth: string) {
+  const ua = unb64u(p256dh)
+  const eph = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])
+  const asPub = new Uint8Array(await crypto.subtle.exportKey('raw', eph.publicKey))
+  const uaKey = await crypto.subtle.importKey('raw', ua, { name: 'ECDH', namedCurve: 'P-256' }, false, [])
+  const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey }, eph.privateKey, 256))
+  const ikm = await hkdf(unb64u(auth), shared, cat(enc.encode('WebPush: info\0'), ua, asPub), 32)
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const cek = await hkdf(salt, ikm, enc.encode('Content-Encoding: aes128gcm\0'), 16)
+  const nonce = await hkdf(salt, ikm, enc.encode('Content-Encoding: nonce\0'), 12)
+  const key = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt'])
+  const data = cat(enc.encode(text), new Uint8Array([2]))
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, key, data))
+  return cat(salt, new Uint8Array([0, 0, 16, 0, 65]), asPub, ct)
+}
+
+// מפתחות VAPID: נוצרים אוטומטית בפעם הראשונה ונשמרים בטבלה app_secrets
+type Vapid = { d: string; x: string; y: string }
+async function vapidKeys(admin: ReturnType<typeof createClient>): Promise<Vapid> {
+  const read = async () => (await admin.from('app_secrets').select('value').eq('key', 'vapid').maybeSingle()).data
+  let row = await read()
+  if (!row) {
+    const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const j = await crypto.subtle.exportKey('jwk', kp.privateKey)
+    await admin.from('app_secrets').upsert(
+      { key: 'vapid', value: JSON.stringify({ d: j.d, x: j.x, y: j.y }) },
+      { onConflict: 'key', ignoreDuplicates: true },
+    )
+    row = await read()
+  }
+  if (!row) throw new Error('vapid keys missing (run the SQL first)')
+  return JSON.parse(row.value)
+}
+async function vapidJwt(aud: string, v: Vapid) {
+  const head = b64u(enc.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })))
+  const claims = b64u(enc.encode(JSON.stringify({ aud, exp: Math.floor(Date.now() / 1000) + 43200, sub: SITE })))
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    { kty: 'EC', crv: 'P-256', d: v.d, x: v.x, y: v.y, ext: true },
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign'],
+  )
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, enc.encode(head + '.' + claims)))
+  return head + '.' + claims + '.' + b64u(sig)
+}
+
+type Sub = { id: string; user_id: string; endpoint: string; p256dh: string; auth: string }
+async function push(sub: Sub, message: unknown, v: Vapid, pub: string) {
+  const jwt = await vapidJwt(new URL(sub.endpoint).origin, v)
+  const r = await fetch(sub.endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: 'vapid t=' + jwt + ', k=' + pub,
+      'Content-Encoding': 'aes128gcm',
+      'Content-Type': 'application/octet-stream',
+      TTL: '86400',
+      Urgency: 'normal',
+    },
+    body: await encrypt(JSON.stringify(message), sub.p256dh, sub.auth),
+  })
+  return r.status
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
+  try {
+    const url = Deno.env.get('SUPABASE_URL')!
+    const secretKeys = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}')
+    const publicKeys = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') ?? '{}')
+    const service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? (Object.values(secretKeys)[0] as string)
+    const anon = Deno.env.get('SUPABASE_ANON_KEY') ?? (Object.values(publicKeys)[0] as string)
+    const opts = { auth: { persistSession: false, autoRefreshToken: false } }
+    const admin = createClient(url, service, opts)
+    const body = await req.json().catch(() => ({}))
+    const mode = String(body.mode ?? '')
+
+    // 1. מי קורא: הטיימר של Supabase (עם סוד), או משתמש מחובר
+    let userId = ''
+    const cronSecret = req.headers.get('x-cron-secret')
+    if (cronSecret) {
+      const { data } = await admin.from('app_secrets').select('value').eq('key', 'cron').maybeSingle()
+      if (!data || data.value !== cronSecret || mode !== 'cron') return reply({ ok: false, error: 'unauthorized' }, 401)
+    } else {
+      const token = (req.headers.get('Authorization') ?? '').replace('Bearer ', '')
+      const { data, error } = await createClient(url, anon, opts).auth.getUser(token)
+      if (error || !data.user) return reply({ ok: false, error: 'unauthorized' }, 401)
+      userId = data.user.id
+    }
+
+    const v = await vapidKeys(admin)
+    const pub = b64u(cat(new Uint8Array([4]), unb64u(v.x), unb64u(v.y)))
+    if (mode === 'key') return reply({ ok: true, key: pub })
+
+    const cols = 'id,user_id,endpoint,p256dh,auth'
+    const drop = async (s: Sub, status: number) => {
+      if (status === 404 || status === 410) await admin.from('push_subs').delete().eq('id', s.id)
+      return status === 404 || status === 410
+    }
+
+    // 2. התראת בדיקה למכשירים של המשתמש עצמו
+    if (mode === 'test') {
+      const { data: subs } = await admin.from('push_subs').select(cols).eq('user_id', userId)
+      let sent = 0
+      for (const s of (subs ?? []) as Sub[]) {
+        const st = await push(s, { title: 'צי רכב', body: 'בדיקה: ההתראות עובדות', url: SITE }, v, pub)
+        if (st >= 200 && st < 300) sent++
+        else await drop(s, st)
+      }
+      return reply({ ok: true, sent })
+    }
+
+    // 3. תזכורות לנהגים שלא עדכנו ק"מ (טיימר חודשי, או מנהל שלוחץ "שלח עכשיו")
+    if (mode !== 'cron' && mode !== 'now') return reply({ ok: false, error: 'bad mode' }, 400)
+    if (mode === 'now') {
+      const { data: me } = await admin.from('profiles').select('role').eq('id', userId).maybeSingle()
+      if (!me || me.role !== 'manager') return reply({ ok: false, error: 'forbidden' }, 403)
+    }
+    const days = Number(body.min_days) > 0 ? Number(body.min_days) : 20
+    const { data: stale, error: se } = await admin.rpc('km_stale_drivers', { min_days: days })
+    if (se) return reply({ ok: false, error: 'rpc: ' + se.message }, 500)
+    const first = new Map<string, { plate: string; model: string }>()
+    for (const r of stale ?? []) if (!first.has(r.driver_id)) first.set(r.driver_id, r)
+    const ids = [...first.keys()]
+    if (ids.length === 0) return reply({ ok: true, drivers: 0, sent: 0, noPush: [], removed: 0 })
+    const { data: subs } = await admin.from('push_subs').select(cols).in('user_id', ids)
+    const { data: people } = await admin.from('profiles').select('id,full_name').in('id', ids)
+    const byUser = new Map<string, Sub[]>()
+    for (const s of (subs ?? []) as Sub[]) byUser.set(s.user_id, [...(byUser.get(s.user_id) ?? []), s])
+    const noPush = ids.filter((i) => !byUser.has(i)).map((i) => (people ?? []).find((p) => p.id === i)?.full_name ?? '')
+    if (body.dry) return reply({ ok: true, dry: true, drivers: ids.length, withPush: byUser.size, noPush })
+    let sent = 0
+    let removed = 0
+    for (const [uid, list] of byUser) {
+      const car = first.get(uid)!
+      const message = {
+        title: 'עדכון קילומטראז׳',
+        body: "הגיע הזמן לעדכן קילומטראז' ל" + car.model + ' ' + car.plate,
+        url: SITE,
+        tag: 'km',
+      }
+      for (const s of list) {
+        const st = await push(s, message, v, pub)
+        if (st >= 200 && st < 300) sent++
+        else if (await drop(s, st)) removed++
+      }
+    }
+    return reply({ ok: true, drivers: ids.length, sent, noPush, removed })
+  } catch (e) {
+    console.error(e)
+    return reply({ ok: false, error: String(e) }, 500)
+  }
+})`;
  const fnCode=String.raw`// read-invoice: קורא תמונה של חשבונית מוסך באמצעות Claude
 // ומחזיר תאריך, סכום, שם מוסך וק"מ. נדרש סוד בשם ANTHROPIC_API_KEY.
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -463,7 +771,7 @@ Deno.serve(async (req) => {
  <li>משייכים לרכב: ניהול ← שיוך נהגים לרכבים. ${go('mng','sec-assign','מעבר לשיוך')}</li>
  <li>שולחים לנהג את האימייל והסיסמה הזמנית. אחר כך ב-ניהול, בקטע "התקנת האפליקציה", לוחצים "שלח הוראות" ליד שמו, ונשלחת לו הודעה עם הקישור והסבר להתקנה. ${go('mng','sec-inst','מעבר להתקנת האפליקציה')}</li></ol></details>
  <details><summary>עדכון האתר (גרסה חדשה)</summary><ol>
- <li>מוחקים מהטלפון קבצי index ישנים מתיקיית ההורדות, ואז מורידים את קובץ index.html החדש מהשיחה עם Claude.</li>
+ <li>מוחקים מהטלפון קבצי index ישנים מתיקיית ההורדות, ואז מורידים את קובץ index.html החדש מהשיחה עם Claude. אם נשלח גם sw.js, מורידים גם אותו ומעלים את שניהם יחד.</li>
  <li>פותחים את דף ההעלאה ב-GitHub ובוחרים את הקובץ (אחרונים). ${L(gh+'/upload/main','דף ההעלאה')}</li>
  <li>אם השם הוא בדיוק index.html, לוחצים Commit changes. אם השם שונה (למשל index-.html), מוחקים את הישן ב-GitHub ומתקנים את השם החדש ל-index.html.</li>
  <li>מחכים דקה-שתיים. אפשר לבדוק שההעלאה הסתיימה (סימן וי ירוק). ${L(gh+'/actions','בדיקה שההעלאה עברה')} אחר כך סוגרים את האפליקציה לגמרי ופותחים מחדש. לבדיקה בלי זיכרון ישן: לשונית גלישה בסתר.</li>
@@ -484,6 +792,18 @@ Deno.serve(async (req) => {
  <li>לנהג שעוד לא התקין יש כפתור "שלח הוראות" שפותח וואטסאפ מוכן.</li>
  <li>לנהגים מופיע בראש האפליקציה כרטיס "התקינו את האפליקציה בטלפון". בכרום באנדרואיד יש בו כפתור "התקנה" שמתקין בלחיצה אחת. אי אפשר להסתיר אותו: הוא נעלם רק כשהנהג פותח את האפליקציה מהאייקון.</li>
  <li>המצב מתעדכן רק כשהנהג פותח את האתר או האפליקציה. נהג שהתקין ולא פתח עדיין לא יופיע כמותקן.</li></ol></details>
+ <details><summary>התראות על עדכון ק"מ</summary><ol>
+ <li>מה זה עושה: ב-1 בכל חודש בבוקר נשלחת התראה לטלפון של כל נהג שלא עדכן ק"מ ב-20 הימים האחרונים. ההתראה מגיעה רק לנהגים שהפעילו התראות באפליקציה. בלי עלות ובלי שירות חיצוני.</li>
+ <li>שלב 1: מעלים ל-GitHub שני קבצים יחד: index.html ו-sw.js (בדף ההעלאה בוחרים את שניהם). ${L(gh+'/upload/main','דף ההעלאה')}</li>
+ <li>שלב 2: ב-SQL Editor מריצים את הקטע הבא (פעם אחת). אמור להופיע Success. ${sqlL}${pre(sqlP)}</li>
+ <li>שלב 3: ב-Supabase: Edge Functions ← Deploy a new function ← Via Editor. נותנים לפונקציה את השם km-reminders, מוחקים את הקוד שיש שם, מדביקים את הקוד הבא ולוחצים Deploy function. ${L(sb0+'/functions','פתיחת Edge Functions')}${pre(kmFnCode)}</li>
+ <li>שלב 4, חשוב: נכנסים לפונקציה km-reminders, ללשונית Details, ומכבים את Verify JWT. הפונקציה בודקת הרשאות בעצמה. בלי זה הטיימר החודשי נכשל עם שגיאה 401. אם אי אפשר למצוא את המתג, שלח לי צילום מסך.</li>
+ <li>שלב 5: ב-SQL Editor מריצים את הקטע הבא, שקובע שההתראה תישלח ב-1 בכל חודש. אם מופיעה שגיאה על pg_cron או pg_net, ב-Supabase נכנסים ל-Integrations, מפעילים Cron ו-Webhooks, ומריצים שוב. ${sqlL}${pre(sqlQ)}</li>
+ <li>שלב 6: באתר, ניהול ← "התראות על עדכון ק"מ": לוחצים "הפעלה במכשיר הזה", מאשרים, ואז "בדיקה אצלי". אמורה להגיע התראה. ${go('mng','sec-push','מעבר להתראות')}</li>
+ <li>כל נהג מפעיל אצלו: בכרטיס "התראות על עדכון ק"מ" בראש האפליקציה לוחצים "הפעלת התראות" ומאשרים. באייפון זה עובד רק אחרי שהאפליקציה מותקנת במסך הבית (iOS 16.4 ומעלה).</li>
+ <li>לשלוח מיד לכל מי שלא עדכן: ניהול ← "שליחה עכשיו". ברשימה רואים מי בלי התראות פעילות. להם שולחים תזכורת בוואטסאפ מהסקירה.</li>
+ <li>בדיקה של הטיימר עצמו (בלי לשלוח כלום): מריצים את הקטע הראשון, מחכים כמה שניות, ואז את השני. אמור להופיע status_code 200 ותוכן שמתחיל ב-{"ok":true. ${sqlL}${pre(sqlR1)}${pre(sqlR2)}</li>
+ <li>אם מופיע 401: Verify JWT עדיין דלוק (שלב 4). אם מופיע 500 עם rpc: לא הורץ שלב 2.</li></ol></details>
  <details><summary>קריאת חשבוניות אוטומטית</summary><ol>
  <li>הנהג בוחר רק סוג טיפול ומצלם את החשבונית. האתר קורא ממנה את התאריך, הסכום, שם המוסך והק"מ, ושומר לבד. אם אין ק"מ בחשבונית, נלקח הק"מ האחרון של הרכב.</li>
  <li>אם משהו חסר או לא ברור (סכום, תאריך, או מספר רכב שונה מהרכב שנבחר), נפתחים לנהג השדות עם מה שנקרא, והוא משלים ושומר.</li>
@@ -493,6 +813,7 @@ Deno.serve(async (req) => {
  <li>שלב 3: Edge Functions ← Deploy a new function ← Via Editor. נותנים לפונקציה את השם read-invoice, מוחקים את הקוד שיש שם, מדביקים את הקוד הבא ולוחצים Deploy function. ${L(sb0+'/functions','פתיחת Edge Functions')}${pre(fnCode)}</li>
  <li>בדיקה: באתר ← טיפולים, בוחרים רכב וסוג טיפול ומצלמים חשבונית. אם הכול תקין, הטיפול נשמר לבד עם הסכום והתאריך מהחשבונית.</li>
  <li>אם זה לא עובד: ב-Supabase, בתוך Edge Functions ← read-invoice, בלשונית Logs רואים את השגיאה. "ai 401" או "ai 400" אומר שהמפתח שגוי או שנגמר הקרדיט.</li>
+ <li>אם מתקבלת שגיאת 401 או Invalid JWT: בלשונית Details של הפונקציה מכבים את Verify JWT. הפונקציה בודקת בעצמה שהמשתמש מחובר.</li>
  <li>שגיאה בקריאה לא פוגעת בנתונים: הנהג רואה את השדות ומשלים אותם בעצמו.</li></ol></details>
  <details><summary>רישיון רכב</summary><ol>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlC)}</li>
@@ -518,14 +839,14 @@ function render(){
  $('#tabs').innerHTML=tabs.map(([k,t])=>`<button class="tab ${ui.tab===k?'on':''}" data-a="tab" data-v="${k}">${t}</button>`).join('');
  if(ui.vid&&!byId(ui.vid))ui.vid=null;
  $('#view').innerHTML=m?(ui.tab==='dash'?(ui.vid?viewVeh(byId(ui.vid)):viewDash()):ui.tab==='hist'?viewHist():ui.tab==='help'?viewHelp():viewManage()):viewDriver();
- drawInst();
+ drawInst();drawPush();
 }
 let vh=false,skipPop=false,vy=0;
 function openVeh(id){vy=window.scrollY;ui.vid=id;if(!vh){history.pushState({veh:1},'');vh=true}render();window.scrollTo(0,0)}
 function closeVeh(){ui.vid=null;if(vh){vh=false;skipPop=true;setTimeout(()=>{skipPop=false},600);history.back()}}
 window.addEventListener('popstate',()=>{if(skipPop){skipPop=false;return}if(ui.vid){ui.vid=null;vh=false;render();window.scrollTo(0,vy)}});
 let tt;
-function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2400)}
+function toast(m,ms=2400){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),ms)}
 function res(e,ok){
  if(!e)return[1,ok];console.error(e);const m=e.message||'';
  return[0,m.includes('cannot decrease')?'הקילומטראז\' לא יכול לרדת':e.code==='23505'?'מספר הרישוי כבר קיים':'הפעולה נכשלה, נסה שוב'];
@@ -647,6 +968,17 @@ document.addEventListener('click',async e=>{
   const{data,error}=await sb.storage.from('invoices').createSignedUrl(b.dataset.p,300);
   if(error){toast('לא ניתן לפתוח את הקבלה');return}
   $('#ov').innerHTML=`<img src="${data.signedUrl}" alt="מסמך">`;$('#ov').classList.add('on');
+ }
+ if(a==='pushon'){b.disabled=true;const[ok,msg]=await pushEnable();b.disabled=false;toast(msg);if(ok){await load(me.id);render()}}
+ if(a==='pushtest'){
+  b.disabled=true;const{data,error}=await sb.functions.invoke('km-reminders',{body:{mode:'test'}});b.disabled=false;
+  toast(error||!data||!data.ok?PUSH_SETUP:data.sent?'נשלחה התראת בדיקה':'אין התראות פעילות במכשיר הזה. לוחצים "הפעלה במכשיר הזה"',4000);
+ }
+ if(a==='pushnow'){
+  if(!confirm('לשלוח עכשיו התראה לכל הנהגים שלא עדכנו ק"מ ב-20 הימים האחרונים?'))return;
+  b.disabled=true;const{data,error}=await sb.functions.invoke('km-reminders',{body:{mode:'now'}});b.disabled=false;
+  if(error||!data||!data.ok){toast(PUSH_SETUP,4000);return}
+  toast(data.drivers===0?'כל הנהגים עדכנו ק"מ, אין למי לשלוח':`נשלחו ${data.sent} התראות. בלי התראות פעילות: ${data.noPush.length?data.noPush.join(', '):'אין'}`,6000);
  }
  if(a==='copy'){
   try{await navigator.clipboard.writeText(b.previousElementSibling.textContent);toast('הועתק')}catch(e){toast('לא ניתן להעתיק, סמן ידנית')}
