@@ -25,8 +25,8 @@ main{max-width:900px;margin:0 auto;padding:16px}
 select,input{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:9px 10px;width:100%}
 :focus-visible{outline:2px solid var(--pri);outline-offset:2px}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:12px}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
-.stats .card{margin:0}.stats b{display:block;font-size:22px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:12px}
+[id^="sec-"]{scroll-margin-top:16px}.stats .card{margin:0}button.stat-link{font:inherit;color:inherit;text-align:start;cursor:pointer;border-color:var(--pri)}.stats b{display:block;font-size:22px}
 small{color:var(--mut);font-size:12px}
 .list{padding:2px 14px}
 .row{display:flex;justify-content:space-between;gap:8px 12px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--bd)}
@@ -37,7 +37,9 @@ small{color:var(--mut);font-size:12px}
 table{width:100%;border-collapse:collapse;font-size:14px;white-space:nowrap}
 th,td{text-align:start;padding:10px 12px;border-bottom:1px solid var(--bd)}
 th{color:var(--mut);font-weight:500;font-size:12px}tr:last-child td{border:0}
-.form{display:grid;gap:10px}label{display:grid;gap:4px;font-size:13px;color:var(--mut)}
+label.filebtn{display:inline-block;text-align:center;cursor:pointer}.filebtn input{display:none}
+.steps{margin:8px 0 10px;padding-inline-start:22px;font-size:14px;line-height:1.6}.steps li{margin-bottom:6px}
+.form,.more,.manual{display:grid;gap:10px}.more[hidden],.manual[hidden],.svcmsg[hidden]{display:none}.svcmsg{margin:0;padding:10px 12px;border-radius:8px;font-size:14px}.note{margin:0;font-size:14px;color:var(--mut)}label{display:grid;gap:4px;font-size:13px;color:var(--mut)}
 .login{max-width:380px;margin:40px auto}
 .btn{font:inherit;font-weight:500;background:var(--pri);color:#fff;border:0;border-radius:6px;padding:10px 14px;cursor:pointer}
 .btn:disabled{opacity:.6}
@@ -58,13 +60,18 @@ details ol{margin:0 0 12px;padding-inline-start:20px}details li{margin-bottom:8p
 pre{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:10px;overflow-x:auto;font-size:12px;direction:ltr;text-align:left;margin:8px 0}
 .remind{border-color:var(--warn);background:var(--warnb);color:var(--warn)}
 a.btn{text-decoration:none;display:inline-block}
+.fleet{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:10px;margin-bottom:12px}
+.vcard{font:inherit;color:inherit;text-align:start;cursor:pointer;display:grid;gap:4px;margin:0;align-content:start;width:100%}
+.vcard b{font-size:16px}.vcard .tags{margin-top:4px}.vkm{font-weight:500}
+.rowlink{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:start;cursor:pointer;display:grid;gap:2px}
+.instline{display:block;width:100%;margin-bottom:12px}
 #ov{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;padding:16px;z-index:9}
 #ov.on{display:flex}#ov img{max-width:100%;max-height:100%;border-radius:6px}
 </style>
 </head>
 <body>
 <header><h1>ניהול תחזוקת צי רכב</h1><div id="who"></div></header>
-<main><div id="tabs"></div><div id="view"><div class="card">טוען...</div></div></main>
+<main><div id="tabs"></div><div id="instbar"></div><div id="view"><div class="card">טוען...</div></div></main>
 <div id="ov"></div>
 <div id="toast" role="status"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -92,16 +99,18 @@ async function init(){
 async function start(){
  const{data:{user}}=await sb.auth.getUser();
  if(!user){showLogin();return}
- await load(user.id);render();
+ await load(user.id);render();track(user.id);
 }
 async function load(uid){
  const r=await Promise.all([sb.from('profiles').select('*'),sb.from('vehicles').select('*').order('plate'),sb.from('services').select('*').order('service_date',{ascending:false}),sb.from('settings').select('*').maybeSingle(),sb.from('km_updates').select('vehicle_id,created_at').order('created_at',{ascending:false}).limit(2000)]);
  const bad=r.find(x=>x.error);if(bad){console.error(bad.error);toast('שגיאה בטעינת הנתונים')}
  D.profiles=r[0].data||[];D.vehicles=r[1].data||[];D.services=r[2].data||[];if(r[3].data)D.settings=r[3].data;D.kmu=r[4].data||[];
  me=D.profiles.find(p=>p.id===uid)||{id:uid,role:'driver',full_name:''};
+ D.inst=[];
+ if(me.role==='manager'){const q=await sb.from('app_installs').select('*');D.inst=q.error?null:(q.data||[])}
 }
 function showLogin(){
- me=null;$('#who').innerHTML='';$('#tabs').innerHTML='';
+ me=null;$('#who').innerHTML='';$('#tabs').innerHTML='';drawInst();
  $('#view').innerHTML=`<form class="card form login" data-f="login"><h3>כניסה למערכת</h3><label>אימייל<input type="email" name="email" autocomplete="username" required></label><label>סיסמה<input type="password" name="password" autocomplete="current-password" required></label><button class="btn">כניסה</button></form>`;
 }
 
@@ -124,41 +133,100 @@ function docs(v){
  });
  return o;
 }
-function alerts(){
- const a=[];
- D.vehicles.forEach(v=>{const s=svcStatus(v);if(s.lvl)a.push({v,...s});docs(v).forEach(x=>a.push({v,...x}))});
- return a.sort((x,y)=>y.lvl-x.lvl);
-}
 const REM_DAYS=30,JUMP=20000;
 const jumpMsg=()=>`הקפיצה בק"מ גדולה מדי (מעל ${fmt(JUMP)}). בדוק שהמספר נכון, ואם הוא נכון פנה למנהל`;
 function kmAge(v){
  const t=[v.created_at,...(D.kmu||[]).filter(u=>u.vehicle_id===v.id).map(u=>u.created_at),...D.services.filter(x=>x.vehicle_id===v.id).map(x=>x.created_at)].filter(Boolean).map(x=>new Date(x).getTime());
  return t.length?Math.floor((Date.now()-Math.max(...t))/DAY):0;
 }
-function waLink(p,name){
+function waTo(p,m){
  let n=String(p||'').replace(/\D/g,'');if(!n)return '';
  if(n.startsWith('0'))n='972'+n.slice(1);
- const m=`שלום ${name}, תזכורת חודשית: נא לעדכן קילומטראז' באפליקציית הצי: ${location.origin+location.pathname}`;
  return `https://wa.me/${n}?text=${encodeURIComponent(m)}`;
 }
-function kmRemind(){
- const l=D.vehicles.filter(v=>v.driver_id).map(v=>({v,age:kmAge(v)})).filter(x=>x.age>=REM_DAYS).sort((a,b)=>b.age-a.age);
- if(!l.length)return '';
- return `<h2>ממתינים לעדכון ק"מ</h2><div class="card list">${l.map(({v,age})=>{
-  const p=D.profiles.find(x=>x.id===v.driver_id)||{},w=waLink(p.phone,p.full_name||'');
-  return `<div class="row"><span>${vname(v)} <small>${esc(p.full_name||'')} · לפני ${age} ימים</small></span>${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת</a>`:'<small>אין מספר טלפון</small>'}</div>`}).join('')}</div>`;
+const siteUrl=()=>location.origin+location.pathname;
+const waLink=(p,name)=>waTo(p,`שלום ${name}, תזכורת חודשית: נא לעדכן קילומטראז' באפליקציית הצי: ${siteUrl()}`);
+const waInstall=(p,name)=>waTo(p,`שלום ${name},
+כדי להתקין את אפליקציית צי הרכב בטלפון:
+
+1. פותחים את הקישור (באייפון חשוב לפתוח ב-Safari):
+${siteUrl()}
+
+2. מתחברים עם האימייל והסיסמה.
+
+3. אחרי ההתחברות מופיע למעלה כרטיס "התקינו את האפליקציה בטלפון". עושים בדיוק מה שכתוב בו, צעד אחרי צעד.
+
+4. מעכשיו פותחים את האפליקציה רק מהאייקון החדש במסך הבית.`);
+let instEv=null,instDone=false;
+function drawInst(){
+ const el=$('#instbar');if(!el)return;
+ if(!me||me.role!=='driver'||instDone||isApp()){el.innerHTML='';return}
+ const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+ const steps=ios?['פותחים את האתר ב-Safari (אייקון המצפן הכחול).','לוחצים על כפתור השיתוף (ריבוע עם חץ למעלה). אם אין כפתור כזה, לוחצים על שלוש הנקודות ⋯ ליד שורת הכתובת, ואז על "שיתוף".','גוללים למטה ולוחצים על "הוספה למסך הבית".','משאירים דלוק את "פתיחה כאפליקציית אינטרנט" ולוחצים "הוספה" למעלה.']:['לוחצים על שלוש הנקודות ⋮ בפינה העליונה של הדפדפן.','לוחצים על "התקנת אפליקציה" (או "הוספה למסך הבית").','לוחצים "התקנה".'];
+ const how=instEv?'<br><small>לוחצים על הכפתור, ואחרי זה על "התקנה" בחלון שייפתח.</small>':`<ol class="steps">${steps.map(s=>`<li>${s}</li>`).join('')}</ol><small>מעכשיו פותחים את האפליקציה רק מהאייקון החדש במסך הבית. אם כבר התקנתם, פתחו אותה משם.</small>`;
+ el.innerHTML=`<div class="card"><b>התקינו את האפליקציה בטלפון</b><br><small>היא תיפתח ישר מהאייקון, בלי להקליד כתובת.</small>${how}${instEv?'<div class="tags" style="margin-top:10px"><button class="btn sm" data-a="install">התקנה</button></div>':''}</div>`;
+}
+function isApp(){
+ try{return ['standalone','fullscreen','minimal-ui'].some(m=>matchMedia(`(display-mode: ${m})`).matches)||navigator.standalone===true}catch(e){return false}
+}
+async function track(uid,force){
+ try{
+  const now=new Date().toISOString(),app=isApp(),row={user_id:uid,last_seen:now};
+  if(force||app)row.installed=true;
+  if(app)row.last_app_open=now;
+  const{error}=await sb.from('app_installs').upsert(row,{onConflict:'user_id'});
+  if(error)console.warn('app_installs',error.message);
+ }catch(e){console.warn(e)}
+}
+function attention(){
+ return D.vehicles.map(v=>{
+  const s=svcStatus(v),items=[],age=v.driver_id?kmAge(v):0;
+  if(s.lvl)items.push({lvl:s.lvl,txt:s.txt});
+  docs(v).forEach(x=>items.push(x));
+  const stale=age>=REM_DAYS;
+  if(stale)items.push({lvl:1,txt:`ק"מ לא עודכן ${age} ימים`});
+  return{v,items,age,stale,lvl:Math.max(0,...items.map(i=>i.lvl))};
+ }).filter(x=>x.items.length).sort((a,b)=>b.lvl-a.lvl||b.age-a.age);
+}
+function instLine(){
+ if(!Array.isArray(D.inst))return '';
+ const ds=D.profiles.filter(p=>p.role==='driver');if(!ds.length)return '';
+ const n=ds.filter(p=>(D.inst.find(x=>x.user_id===p.id)||{}).installed).length;
+ if(n>=ds.length)return '';
+ return `<button type="button" class="card stat-link instline" data-a="tab" data-v="mng" data-to="sec-inst"><b>התקנת האפליקציה: ${n} מתוך ${ds.length} נהגים</b><br><small>לפירוט ולשליחת הוראות</small></button>`;
+}
+function installBox(){
+ if(D.inst===null)return `<h2 id="sec-inst">התקנת האפליקציה</h2><div class="card"><small>כדי לראות מי התקין את האפליקציה צריך ליצור טבלה אחת ב-Supabase. ההוראות במדריך, תחת "מי התקין את האפליקציה".</small></div>`;
+ const ds=D.profiles.filter(p=>p.role==='driver');
+ if(!ds.length)return '';
+ const get=p=>D.inst.find(x=>x.user_id===p.id);
+ const rows=ds.map(p=>{
+  const r=get(p),w=waInstall(p.phone,p.full_name||'');
+  const st=r&&r.installed?['ok','מותקן']:r?['warn','נכנס מהדפדפן']:['bad','לא נראה עדיין'];
+  const seen=r?`נכנס לאחרונה ${fd(r.last_seen)}`:'';
+  const btn=r&&r.installed?'':(w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח הוראות</a>`:'<small>אין מספר טלפון</small>');
+  return `<div class="row"><span>${esc(p.full_name||'ללא שם')} <small>${seen}</small></span><span class="tags"><span class="b ${st[0]}">${st[1]}</span>${btn}</span></div>`}).join('');
+ const n=ds.filter(p=>(get(p)||{}).installed).length;
+ return `<h2 id="sec-inst">התקנת האפליקציה (${n} מתוך ${ds.length})</h2><div class="card list">${rows}</div><p style="margin:-4px 0 12px"><small>"לא נראה עדיין": לא נכנס לאתר מאז העדכון. "נכנס מהדפדפן": נכנס, אבל לא פתח כאפליקציה מותקנת.</small></p>`;
 }
 function svcForm(vid){
+ const m=me.role==='manager';
  return `<form class="card form" data-f="svc"><h3>רישום טיפול</h3>
  ${vid?`<input type="hidden" name="vid" value="${vid}">`:`<label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)}</option>`).join('')}</select></label>`}
- <label>סוג טיפול<select name="type">${Object.entries(TYPES).map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}</select></label>
- <label>תאריך<input type="date" name="date" value="${today()}" required></label>
- <label>ק"מ בטיפול<input type="number" name="km" min="0" required></label>
+ <label>סוג טיפול<select name="type" required><option value="" selected disabled>בחרו סוג טיפול</option>${Object.entries(TYPES).map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}</select></label>
+ <div class="more" hidden>
+ <input type="hidden" name="manual" value=""><input type="hidden" name="uploaded" value="">
+ <p class="note">מצלמים את החשבונית, והאתר קורא ממנה לבד את התאריך, הסכום, המוסך והק"מ.</p>
+ <label>צילום חשבונית${m?' (אופציונלי)':''}<input type="file" name="receipt" accept="image/*" capture="environment"></label>
+ <label>או בחירת תמונה מהגלריה<input type="file" name="receipt2" accept="image/*"></label>
+ <p class="svcmsg warn" role="alert" hidden></p>
+ <div class="manual" hidden>
+ <label>תאריך<input type="date" name="date" value="${today()}"></label>
+ <label>ק"מ בטיפול<input type="number" name="km" min="0"></label>
  <label>עלות (₪)<input type="number" name="cost" min="0" step="any"></label>
  <label>מוסך<input name="garage"></label>
- <label>צילום קבלה${me.role==='manager'?' (אופציונלי)':''}<input type="file" name="receipt" accept="image/*" capture="environment"></label>
- <label>או בחירת תמונה מהגלריה<input type="file" name="receipt2" accept="image/*"></label>
- <button class="btn">שמירת טיפול</button></form>`;
+ </div>
+ <button class="btn">שמירת טיפול</button></div></form>`;
 }
 function svcTable(list){
  return `<div class="card scroll"><table><tr><th>תאריך</th><th>רכב</th><th>סוג</th><th>ק"מ</th><th>עלות</th><th>מוסך</th><th>קבלה</th></tr>${
@@ -166,23 +234,63 @@ function svcTable(list){
  return `<tr><td>${fd(s.service_date)}</td><td>${vname(v)}</td><td>${TYPES[s.type]||esc(s.type)}</td><td>${fmt(s.km)}</td><td>₪${fmt(s.cost)}</td><td>${esc(s.garage||'')}</td><td>${s.invoice_path?`<button class="btn ghost sm" data-a="rc" data-p="${esc(s.invoice_path)}">צפייה</button>`:'—'}</td></tr>`}).join('')
  ||'<tr><td colspan="7">עוד לא נרשמו טיפולים</td></tr>'}</table></div>`;
 }
+function svcList(l,showVeh,empty){
+ return `<div class="card list">${l.map(s=>{const v=byId(s.vehicle_id)||{model:'?',plate:''};return `<div class="row"><span>${fd(s.service_date)}${showVeh?' · '+vname(v):''}<br><small>${TYPES[s.type]||esc(s.type)}${s.garage?' · '+esc(s.garage):''} · ${fmt(s.km)} ק"מ</small></span><span class="tags"><b>₪${fmt(s.cost)}</b>${s.invoice_path?`<button type="button" class="btn ghost sm" data-a="rc" data-p="${esc(s.invoice_path)}">קבלה</button>`:''}</span></div>`}).join('')||`<div class="row">${empty||'עוד לא נרשמו טיפולים'}</div>`}</div>`;
+}
+const ySvcs=y=>D.services.filter(s=>new Date(s.service_date).getFullYear()===y);
+function viewHist(){
+ if(!ui.year)return svcForm()+'<h2>כל הטיפולים</h2>'+svcTable(D.services);
+ const l=ySvcs(ui.year),t=l.reduce((a,s)=>a+Number(s.cost||0),0);
+ return `<h2>טיפולים ב-${ui.year}</h2><div class="card"><div class="row" style="padding:0;border:0"><span><b>סה"כ ₪${fmt(t)}</b><br><small>${l.length} טיפולים</small></span><button type="button" class="btn ghost sm" data-a="allsvc">הצגת כל הטיפולים</button></div></div>${svcList(l,true,'עוד לא נרשמו טיפולים השנה')}${svcForm()}`;
+}
 function viewDash(){
- const al=alerts(),yr=new Date().getFullYear();
- const cost=D.services.filter(s=>new Date(s.service_date).getFullYear()===yr).reduce((t,s)=>t+Number(s.cost||0),0);
- return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><div class="card"><small>דורשים טיפול</small><b>${al.length}</b></div><div class="card"><small>עלות טיפולים השנה</small><b>₪${fmt(cost)}</b></div></div>
- <h2>דורש טיפול</h2>${al.length?`<div class="card list">${al.map(x=>`<div class="row"><span>${vname(x.v)} <small>${drv(x.v.driver_id)}</small></span><span class="b ${cls(x.lvl)}">${x.txt}</span></div>`).join('')}</div>`:'<div class="card">אין התראות פתוחות</div>'}
- ${kmRemind()}<h2>הצי</h2><div class="card scroll"><table><tr><th>רכב</th><th>נהג</th><th>ק"מ</th><th>סטטוס טיפול</th></tr>${D.vehicles.map(v=>{const s=svcStatus(v);return `<tr><td>${vname(v)}</td><td>${drv(v.driver_id)}</td><td>${fmt(v.km)}</td><td><span class="b ${cls(s.lvl)}">${s.txt}</span></td></tr>`}).join('')||'<tr><td colspan="4">עוד לא נוספו רכבים</td></tr>'}</table></div>`;
+ const at=attention(),yr=new Date().getFullYear();
+ const cost=ySvcs(yr).reduce((t,s)=>t+Number(s.cost||0),0);
+ const dr=id=>D.profiles.find(p=>p.id===id)||{};
+ const rows=at.map(x=>{
+  const p=dr(x.v.driver_id),w=x.stale&&p.phone?waLink(p.phone,p.full_name||''):'';
+  return `<div class="row"><button type="button" class="rowlink" data-a="veh" data-id="${x.v.id}"><b>${vname(x.v)}</b><small>${drv(x.v.driver_id)}</small></button><span class="tags">${x.items.map(i=>`<span class="b ${cls(i.lvl)}">${i.txt}</span>`).join('')}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת</a>`:''}</span></div>`}).join('');
+ const cards=D.vehicles.map(v=>{const s=svcStatus(v);return `<button type="button" class="card vcard" data-a="veh" data-id="${v.id}"><b>${esc(v.model)}</b><small>${esc(v.plate)}</small><small>${drv(v.driver_id)}</small><span class="vkm">${fmt(v.km)} ק"מ</span><span class="tags"><span class="b ${cls(s.lvl)}">${s.txt}</span>${docs(v).map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</span></button>`}).join('');
+ return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><div class="card"><small>דורשים תשומת לב</small><b>${at.length}</b></div><button type="button" class="card stat-link" data-a="costyear"><small>עלות טיפולים השנה</small><b>₪${fmt(cost)}</b><small>לחיצה לפירוט</small></button></div>
+ ${instLine()}<h2>דורש תשומת לב</h2>${at.length?`<div class="card list">${rows}</div>`:'<div class="card">הכול תקין, אין התראות פתוחות</div>'}
+ <h2>הצי <small>(לחיצה על רכב פותחת את כל הפרטים עליו)</small></h2>${cards?`<div class="fleet">${cards}</div>`:'<div class="card">עוד לא נוספו רכבים</div>'}`;
+}
+function viewVeh(v){
+ const s=svcStatus(v),dc=docs(v),age=kmAge(v),p=D.profiles.find(x=>x.id===v.driver_id)||null;
+ const digits=String(v.km).padStart(6,'0').split('').map(c=>`<i>${c}</i>`).join('');
+ const svs=D.services.filter(x=>x.vehicle_id===v.id),yr=new Date().getFullYear();
+ const sum=l=>l.reduce((t,x)=>t+Number(x.cost||0),0);
+ const stale=!!v.driver_id&&age>=REM_DAYS,w=stale&&p&&p.phone?waLink(p.phone,p.full_name||''):'';
+ const opts='<option value="">ללא</option>'+D.profiles.filter(x=>x.role==='driver').map(x=>`<option value="${x.id}"${x.id===v.driver_id?' selected':''}>${esc(x.full_name)}</option>`).join('');
+ return `<button type="button" class="btn ghost sm" data-a="back">‹ חזרה לסקירה</button>
+ <div class="card" style="margin-top:12px"><h3>${vname(v)}</h3><small>שנה ${v.year||'—'} · טסט עד ${fd(v.test_date)} · ביטוח עד ${fd(v.insurance_date)}</small>
+ <div class="odo">${digits}<small>ק"מ</small></div>
+ <div class="tags"><span class="b ${cls(s.lvl)}">${s.txt}</span>${dc.map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}${stale?`<span class="b warn">ק"מ לא עודכן ${age} ימים</span>`:''}</div></div>
+ <div class="card list"><div class="row"><span>נהג</span><select data-assign="${v.id}" aria-label="נהג">${opts}</select></div>${p&&(p.phone||w)?`<div class="row"><span><small>${esc(p.phone||'')}</small></span><span class="tags">${p.phone?`<a class="btn ghost sm" href="tel:${esc(p.phone)}">התקשרות</a>`:''}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת לק"מ</a>`:''}</span></div>`:''}</div>
+ <div class="stats"><div class="card"><small>עלות טיפולים השנה</small><b>₪${fmt(sum(svs.filter(x=>new Date(x.service_date).getFullYear()===yr)))}</b></div><div class="card"><small>עלות כוללת</small><b>₪${fmt(sum(svs))}</b></div></div>
+ ${svcForm(v.id)}<h2>היסטוריית טיפולים</h2>${svcList(svs,false)}
+ ${licBox(v)}
+ <details><summary>תיקון קילומטראז'</summary><form class="form" data-f="kmfix" style="padding-bottom:12px"><input type="hidden" name="vid" value="${v.id}"><label>ק"מ חדש<input type="number" name="km" min="0" value="${v.km}" required></label><button class="btn">עדכון ק"מ</button></form></details>`;
+}
+function licRow(v){
+ return `<div class="row"><span>${vname(v)}<br><small>${v.license_path?'הועלה ב-'+fd(v.license_at):'עוד לא הועלה'}</small></span><span class="tags">${v.license_path?`<button class="btn sm" data-a="rc" data-p="${esc(v.license_path)}">צפייה</button>`:''}<label class="btn ghost sm filebtn">${v.license_path?'החלפה':'העלאה'}<input type="file" accept="image/*" data-lic="${v.id}"></label></span></div>`;
+}
+function licBox(one){
+ if(D.vehicles.length&&!('license_path' in D.vehicles[0]))return `<h2 id="sec-lic">רישיון רכב</h2><div class="card"><small>כדי לשמור צילום רישיון לכל רכב צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "רישיון רכב".</small></div>`;
+ const vs=one?[one]:D.vehicles;
+ return `<h2 id="sec-lic">רישיון רכב</h2><div class="card list">${vs.map(licRow).join('')||'<small>עוד אין רכבים</small>'}</div>`;
 }
 function viewManage(){
  const drivers=D.profiles.filter(p=>p.role==='driver');
  const opts=sel=>`<option value="">ללא</option>`+drivers.map(p=>`<option value="${p.id}"${p.id===sel?' selected':''}>${esc(p.full_name)}</option>`).join('');
- return `<form class="card form" data-f="rules"><h3>כללי תזכורת לטיפול תקופתי</h3><label>כל כמה ק"מ<input type="number" name="km" value="${D.settings.service_interval_km}" min="1000" required></label><label>או כל כמה חודשים<input type="number" name="months" value="${D.settings.service_interval_months}" min="1" required></label><button class="btn">עדכון כללים</button></form>
- <form class="card form" data-f="veh"><h3>הוספת רכב</h3><label>מספר רישוי<input name="plate" required></label><label>דגם<input name="model" required></label><label>שנה<input type="number" name="year" min="1990" max="2035"></label>
+ return `<form id="sec-rules" class="card form" data-f="rules"><h3>כללי תזכורת לטיפול תקופתי</h3><label>כל כמה ק"מ<input type="number" name="km" value="${D.settings.service_interval_km}" min="1000" required></label><label>או כל כמה חודשים<input type="number" name="months" value="${D.settings.service_interval_months}" min="1" required></label><button class="btn">עדכון כללים</button></form>
+ <form id="sec-veh" class="card form" data-f="veh"><h3>הוספת רכב</h3><label>מספר רישוי<input name="plate" required></label><label>דגם<input name="model" required></label><label>שנה<input type="number" name="year" min="1990" max="2035"></label>
  <label>נהג<select name="driverId">${opts('')}</select></label>
  <label>ק"מ נוכחי<input type="number" name="km" min="0" required></label><label>תוקף טסט<input type="date" name="test"></label><label>תוקף ביטוח<input type="date" name="ins"></label><button class="btn">הוספת רכב</button></form>
- <form class="card form" data-f="kmfix"><h3>עריכת ק"מ לרכב</h3><label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)} · ${fmt(v.km)} ק"מ</option>`).join('')}</select></label><label>ק"מ חדש<input type="number" name="km" min="0" required></label><button class="btn">עדכון ק"מ</button></form>
- <h2>שיוך נהגים לרכבים</h2><div class="card list">${D.vehicles.map(v=>`<div class="row"><span>${vname(v)}</span><select data-assign="${v.id}">${opts(v.driver_id)}</select></div>`).join('')||'עוד אין רכבים'}</div>
- <h2>נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>`;
+ <form id="sec-kmfix" class="card form" data-f="kmfix"><h3>עריכת ק"מ לרכב</h3><label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)} · ${fmt(v.km)} ק"מ</option>`).join('')}</select></label><label>ק"מ חדש<input type="number" name="km" min="0" required></label><button class="btn">עדכון ק"מ</button></form>
+ <h2 id="sec-assign">שיוך נהגים לרכבים</h2><div class="card list">${D.vehicles.map(v=>`<div class="row"><span>${vname(v)}</span><select data-assign="${v.id}">${opts(v.driver_id)}</select></div>`).join('')||'עוד אין רכבים'}</div>
+ ${licBox()}
+ <h2 id="sec-drivers">נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>${installBox()}`;
 }
 function viewDriver(){
  const v=D.vehicles[0];
@@ -212,56 +320,221 @@ set km = 123000
 where km = 1230000
   and vehicle_id = (select id from public.vehicles where plate = '11111111')
 returning service_date, type, km;`;
+ const sqlA=`create table if not exists public.app_installs (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  installed boolean not null default false,
+  last_seen timestamptz not null default now(),
+  last_app_open timestamptz
+);
+alter table public.app_installs enable row level security;
+grant select, insert, update on public.app_installs to authenticated;`;
+ const sqlB=`drop policy if exists app_installs_select on public.app_installs;
+drop policy if exists app_installs_insert on public.app_installs;
+drop policy if exists app_installs_update on public.app_installs;
+create policy app_installs_select on public.app_installs for select to authenticated
+  using (user_id = auth.uid() or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'manager'));
+create policy app_installs_insert on public.app_installs for insert to authenticated
+  with check (user_id = auth.uid());
+create policy app_installs_update on public.app_installs for update to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());`;
+ const sqlC=`alter table public.vehicles
+  add column if not exists license_path text,
+  add column if not exists license_at timestamptz;`;
+ const sqlD=`drop policy if exists lic_mgr_insert on storage.objects;
+drop policy if exists lic_mgr_select on storage.objects;
+drop policy if exists lic_mgr_delete on storage.objects;
+create policy lic_mgr_insert on storage.objects for insert to authenticated
+  with check (bucket_id = 'invoices' and public.is_manager());
+create policy lic_mgr_select on storage.objects for select to authenticated
+  using (bucket_id = 'invoices' and public.is_manager());
+create policy lic_mgr_delete on storage.objects for delete to authenticated
+  using (bucket_id = 'invoices' and public.is_manager());`;
+ const fnCode=String.raw`// read-invoice: קורא תמונה של חשבונית מוסך באמצעות Claude
+// ומחזיר תאריך, סכום, שם מוסך וק"מ. נדרש סוד בשם ANTHROPIC_API_KEY.
+import { createClient } from 'npm:@supabase/supabase-js@2'
+
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+const reply = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...cors, 'Content-Type': 'application/json' },
+  })
+
+const PROMPT = [
+  'This is a photo of a receipt or invoice for a vehicle service, repair, tires or parts from an Israeli business.',
+  'It is mostly in Hebrew, may be handwritten, and may show several papers (for example an invoice and a credit card slip).',
+  'Dates in Israel are day/month/year.',
+  'Answer with ONLY one JSON object and nothing else:',
+  '{"readable": true or false, "date": "YYYY-MM-DD" or null, "cost": number or null, "km": number or null, "garage": string or null, "plate": string or null, "summary": string or null}',
+  'cost = the final total actually paid, in NIS, including VAT (for example the total to pay, or the amount on the card slip), as a plain number.',
+  'km = the vehicle odometer reading, only if it is clearly written, otherwise null.',
+  'garage = the business name.',
+  'plate = the vehicle license plate digits only, only if a vehicle number is written, otherwise null.',
+  'summary = what was done, in Hebrew, at most 60 characters, or null.',
+  'Never guess. Use null for anything that is missing or unclear.',
+  'If the image is not a receipt or an invoice, answer {"readable": false}.',
+].join(' ')
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
+  try {
+    // 1. רק משתמש מחובר שיש לו רכב (או מנהל) יכול להשתמש בשירות
+    const token = (req.headers.get('Authorization') ?? '').replace('Bearer ', '')
+    const pub = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') ?? '{}')
+    const anon = Deno.env.get('SUPABASE_ANON_KEY') ?? (Object.values(pub)[0] as string)
+    const url = Deno.env.get('SUPABASE_URL')!
+    const noSession = { persistSession: false, autoRefreshToken: false }
+    const { data: u, error: ue } = await createClient(url, anon, { auth: noSession }).auth.getUser(token)
+    if (ue || !u.user) return reply({ ok: false, error: 'unauthorized' }, 401)
+    const db = createClient(url, anon, {
+      auth: noSession,
+      global: { headers: { Authorization: 'Bearer ' + token } },
+    })
+    const { data: veh } = await db.from('vehicles').select('id').limit(1)
+    if (!veh || veh.length === 0) return reply({ ok: false, error: 'forbidden' }, 403)
+
+    // 2. התמונה
+    const { image } = await req.json()
+    if (typeof image !== 'string' || image.length < 100 || image.length > 7000000) {
+      return reply({ ok: false, error: 'bad image' }, 400)
+    }
+    const key = Deno.env.get('ANTHROPIC_API_KEY')
+    if (!key) return reply({ ok: false, error: 'missing ANTHROPIC_API_KEY' }, 500)
+
+    // 3. קריאה ל-Claude
+    const ws = Deno.env.get('ANTHROPIC_WORKSPACE_ID')
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        ...(ws ? { 'anthropic-workspace-id': ws } : {}),
+      },
+      body: JSON.stringify({
+        model: Deno.env.get('INVOICE_MODEL') ?? 'claude-sonnet-5-5',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
+            { type: 'text', text: PROMPT },
+          ],
+        }],
+      }),
+    })
+    if (!r.ok) {
+      console.error('anthropic', r.status, (await r.text()).slice(0, 300))
+      return reply({ ok: false, error: 'ai ' + r.status }, 502)
+    }
+    const out = await r.json()
+    const text = (out.content ?? []).map((c: { text?: string }) => c.text ?? '').join('')
+    const a = text.indexOf('{')
+    const b = text.lastIndexOf('}')
+    if (a < 0 || b < a) return reply({ ok: false, error: 'no json' }, 502)
+    return reply({ ok: true, data: JSON.parse(text.slice(a, b + 1)) })
+  } catch (e) {
+    console.error(e)
+    return reply({ ok: false, error: String(e) }, 500)
+  }
+})`;
  const pre=t=>`<pre>${esc(t)}</pre><button class="btn ghost sm" data-a="copy">העתקה</button>`;
- return `<details open><summary>הוספת נהג חדש</summary><ol>
- <li>ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. <a href="${sb0}/auth/users" target="_blank" rel="noopener">פתיחה</a></li>
- <li>באתר: ניהול ← נהגים. אם הנהג לא מופיע, מריצים ב-SQL Editor את הקוד הבא ומרעננים. <a href="${sb0}/sql/new" target="_blank" rel="noopener">פתיחת SQL Editor</a>${pre(sql1)}</li>
+ const L=(h,t)=>`<a class="btn ghost sm" href="${h}" target="_blank" rel="noopener">${t}</a>`;
+ const go=(v,to,t)=>`<button type="button" class="btn ghost sm" data-a="tab" data-v="${v}"${to?` data-to="${to}"`:''}>${t}</button>`;
+ const gh='https://github.com/kfirfleet/fleet',site='https://kfirfleet.github.io/fleet/',sqlL=L(sb0+'/sql/new','פתיחת SQL Editor');
+ return `<details open><summary>קישורים מהירים</summary>
+ <p><b>Supabase</b> <small>נתונים, משתמשים ותמונות</small></p>
+ <div class="tags" style="margin-bottom:14px">${sqlL}${L(sb0+'/auth/users','משתמשים')}${L(sb0+'/editor','טבלאות')}${L(sb0+'/storage/buckets','תמונות וקבצים')}${L(sb0+'/functions','Edge Functions')}${L(sb0,'דף הפרויקט')}</div>
+ <p><b>GitHub</b> <small>קבצי האתר</small></p>
+ <div class="tags" style="margin-bottom:14px">${L(gh+'/upload/main','העלאת קובץ')}${L(gh+'/actions','בדיקה שההעלאה עברה')}${L(gh,'כל הקבצים')}</div>
+ <p><b>האתר</b></p>
+ <div class="tags" style="margin-bottom:12px">${L(site,'פתיחת האתר')}</div></details>
+ <details><summary>דף לכל רכב</summary><ol>
+ <li>בסקירה לוחצים על רכב ברשימת הצי, או על שמו בקטע "דורש תשומת לב". נפתח דף עם כל מה שקשור לרכב.</li>
+ <li>בדף: הק"מ והסטטוס, הנהג (אפשר להחליף), התקשרות ושליחת תזכורת, עלות הטיפולים, רישום טיפול חדש, היסטוריית הטיפולים והחשבוניות, רישיון הרכב ותיקון ק"מ.</li>
+ <li>חזרה לסקירה: לוחצים "חזרה לסקירה" או על כפתור החזרה של הטלפון.</li></ol></details>
+ <details><summary>הוספת נהג חדש</summary><ol>
+ <li>ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. ${L(sb0+'/auth/users','פתיחה')}</li>
+ <li>באתר: ניהול ← נהגים. ${go('mng','sec-drivers','מעבר לנהגים')} אם הנהג לא מופיע, מריצים ב-SQL Editor את הקוד הבא ומרעננים. ${sqlL}${pre(sql1)}</li>
  <li>נותנים שם וטלפון ולוחצים שמירה.</li>
- <li>משייכים לרכב: ניהול ← שיוך נהגים לרכבים.</li>
- <li>שולחים לנהג את הכתובת, האימייל והסיסמה הזמנית, ומבקשים להוסיף קיצור למסך הבית מהכתובת הזו (⋮ ← הוסף למסך הבית).</li></ol></details>
+ <li>משייכים לרכב: ניהול ← שיוך נהגים לרכבים. ${go('mng','sec-assign','מעבר לשיוך')}</li>
+ <li>שולחים לנהג את האימייל והסיסמה הזמנית. אחר כך ב-ניהול, בקטע "התקנת האפליקציה", לוחצים "שלח הוראות" ליד שמו, ונשלחת לו הודעה עם הקישור והסבר להתקנה. ${go('mng','sec-inst','מעבר להתקנת האפליקציה')}</li></ol></details>
  <details><summary>עדכון האתר (גרסה חדשה)</summary><ol>
- <li>מורידים את קובץ index.html החדש מהשיחה עם Claude.</li>
- <li>פותחים את <a href="https://github.com/kfirfleet/fleet/upload/main" target="_blank" rel="noopener">דף ההעלאה ב-GitHub</a> ובוחרים את הקובץ (אחרונים).</li>
+ <li>מוחקים מהטלפון קבצי index ישנים מתיקיית ההורדות, ואז מורידים את קובץ index.html החדש מהשיחה עם Claude.</li>
+ <li>פותחים את דף ההעלאה ב-GitHub ובוחרים את הקובץ (אחרונים). ${L(gh+'/upload/main','דף ההעלאה')}</li>
  <li>אם השם הוא בדיוק index.html, לוחצים Commit changes. אם השם שונה (למשל index-.html), מוחקים את הישן ב-GitHub ומתקנים את השם החדש ל-index.html.</li>
- <li>מחכים דקה-שתיים, סוגרים ופותחים את האתר מחדש. לבדיקה בלי זיכרון ישן: לשונית גלישה בסתר.</li>
- <li>תמיד פותחים את האתר מהכתובת kfirfleet.github.io/fleet ולא מקובץ בטלפון.</li></ol></details>
+ <li>מחכים דקה-שתיים. אפשר לבדוק שההעלאה הסתיימה (סימן וי ירוק). ${L(gh+'/actions','בדיקה שההעלאה עברה')} אחר כך סוגרים את האפליקציה לגמרי ופותחים מחדש. לבדיקה בלי זיכרון ישן: לשונית גלישה בסתר.</li>
+ <li>תמיד פותחים את האתר מהכתובת kfirfleet.github.io/fleet ולא מקובץ בטלפון. ${L(site,'פתיחת האתר')}</li></ol></details>
  <details><summary>תיקון ק"מ</summary><ol>
- <li>ק"מ של רכב: ניהול ← עריכת ק"מ לרכב.</li>
- <li>ק"מ שגוי בטיפול שנרשם: ב-SQL Editor מחליפים במספרים ובמספר הרישוי ומריצים.${pre(sql3)}</li></ol></details>
+ <li>ק"מ של רכב: ניהול ← עריכת ק"מ לרכב. ${go('mng','sec-kmfix','מעבר לעריכת ק"מ')}</li>
+ <li>ק"מ שגוי בטיפול שנרשם: ב-SQL Editor מחליפים במספרים ובמספר הרישוי ומריצים. אם מופיע No rows returned, השורה שייכת לרכב אחר. ${sqlL}${pre(sql3)}</li></ol></details>
  <details><summary>איפוס סיסמה למשתמש</summary><ol>
- <li>ב-SQL Editor מחליפים את NEW_PASSWORD ואת האימייל (באותיות קטנות, גרשיים נשארים) ומריצים. את הסיסמה לא שומרים בשאילתה.${pre(sql2)}</li>
+ <li>ב-SQL Editor מחליפים את NEW_PASSWORD ואת האימייל (באותיות קטנות, גרשיים נשארים) ומריצים. את הסיסמה לא שומרים בשאילתה. ${sqlL}${pre(sql2)}</li>
  <li>סיסמת החשבון ב-Supabase עצמו מאפסים במסך הכניסה שלו, ב"שכחת סיסמה".</li></ol></details>
  <details><summary>תזכורות ק"מ חודשיות</summary><ol>
- <li>בסקירה מופיעה רשימה "ממתינים לעדכון ק"מ" עם נהגים שלא עדכנו 30 יום.</li>
- <li>כפתור "שלח תזכורת" פותח וואטסאפ מוכן. לשם כך צריך מספר טלפון לנהג ב-ניהול ← נהגים.</li></ol></details>
+ <li>בסקירה, בקטע "דורש תשומת לב", מופיע "ק"מ לא עודכן X ימים" ליד רכבים שהנהג שלהם לא עדכן 30 יום, עם כפתור "שלח תזכורת" לוואטסאפ. ${go('dash',null,'מעבר לסקירה')}</li>
+ <li>כפתור "שלח תזכורת" פותח וואטסאפ מוכן. לשם כך צריך מספר טלפון לנהג ב-ניהול ← נהגים. ${go('mng','sec-drivers','מעבר לנהגים')}</li></ol></details>
+ <details><summary>מי התקין את האפליקציה</summary><ol>
+ <li>פעם אחת בלבד: ב-SQL Editor מריצים את שני הקטעים הבאים, אחד אחרי השני. הקוד בטוח להרצה חוזרת, אז אם הדבקה נחתכה אפשר פשוט להריץ שוב. ${sqlL}${pre(sqlA)}${pre(sqlB)}</li>
+ <li>אחרי זה, ב-ניהול, בקטע "התקנת האפליקציה", מופיע מצב של כל נהג. בסקירה מופיעה שורה קטנה כל עוד לא כולם התקינו. ${go('mng','sec-inst','מעבר להתקנת האפליקציה')}</li>
+ <li>"מותקן": הנהג פתח את האפליקציה מהאייקון. "נכנס מהדפדפן": נכנס לאתר אבל עוד לא התקין. "לא נראה עדיין": לא נכנס לאתר מאז העדכון.</li>
+ <li>לנהג שעוד לא התקין יש כפתור "שלח הוראות" שפותח וואטסאפ מוכן.</li>
+ <li>לנהגים מופיע בראש האפליקציה כרטיס "התקינו את האפליקציה בטלפון". בכרום באנדרואיד יש בו כפתור "התקנה" שמתקין בלחיצה אחת. אי אפשר להסתיר אותו: הוא נעלם רק כשהנהג פותח את האפליקציה מהאייקון.</li>
+ <li>המצב מתעדכן רק כשהנהג פותח את האתר או האפליקציה. נהג שהתקין ולא פתח עדיין לא יופיע כמותקן.</li></ol></details>
+ <details><summary>קריאת חשבוניות אוטומטית</summary><ol>
+ <li>הנהג בוחר רק סוג טיפול ומצלם את החשבונית. האתר קורא ממנה את התאריך, הסכום, שם המוסך והק"מ, ושומר לבד. אם אין ק"מ בחשבונית, נלקח הק"מ האחרון של הרכב.</li>
+ <li>אם משהו חסר או לא ברור (סכום, תאריך, או מספר רכב שונה מהרכב שנבחר), נפתחים לנהג השדות עם מה שנקרא, והוא משלים ושומר.</li>
+ <li>הקריאה עולה כסף קטן (בדרך כלל אגורות בודדות לחשבונית) ועוברת דרך חשבון נפרד ב-Claude Console, לא דרך המנוי הרגיל של Claude. בלי ההגדרה הזו האתר ממשיך לעבוד, והנהג ממלא את הפרטים בעצמו.</li>
+ <li>הגדרה חד-פעמית, שלב 1: נכנסים ל-Claude Console, מוסיפים קרדיט בהגדרות החיוב (Billing), ואז ב-API keys לוחצים Create key ומעתיקים את המפתח (מתחיל ב-sk-ant). הוא מוצג פעם אחת בלבד. ${L('https://platform.claude.com/settings/keys','מפתחות API')}</li>
+ <li>שלב 2: שומרים את המפתח ב-Supabase: Edge Functions ← Secrets. בשם (Key) כותבים ANTHROPIC_API_KEY, בערך (Value) מדביקים את המפתח, ולוחצים Save. ${L(sb0+'/functions/secrets','פתיחת Secrets')}</li>
+ <li>שלב 3: Edge Functions ← Deploy a new function ← Via Editor. נותנים לפונקציה את השם read-invoice, מוחקים את הקוד שיש שם, מדביקים את הקוד הבא ולוחצים Deploy function. ${L(sb0+'/functions','פתיחת Edge Functions')}${pre(fnCode)}</li>
+ <li>בדיקה: באתר ← טיפולים, בוחרים רכב וסוג טיפול ומצלמים חשבונית. אם הכול תקין, הטיפול נשמר לבד עם הסכום והתאריך מהחשבונית.</li>
+ <li>אם זה לא עובד: ב-Supabase, בתוך Edge Functions ← read-invoice, בלשונית Logs רואים את השגיאה. "ai 401" או "ai 400" אומר שהמפתח שגוי או שנגמר הקרדיט.</li>
+ <li>שגיאה בקריאה לא פוגעת בנתונים: הנהג רואה את השדות ומשלים אותם בעצמו.</li></ol></details>
+ <details><summary>רישיון רכב</summary><ol>
+ <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlC)}</li>
+ <li>אחרי זה: ניהול ← רישיון רכב. ליד כל רכב לוחצים "העלאה", ומצלמים את הרישיון או בוחרים תמונה מהגלריה. ${go('mng','sec-lic','מעבר לרישיון רכב')}</li>
+ <li>כשמתקבל רישיון חדש (למשל אחרי טסט שנתי) לוחצים "החלפה". התמונה הקודמת נמחקת.</li>
+ <li>לצפייה לוחצים "צפייה". הרישיון מוצג רק למנהל.</li>
+ <li>רק אם ההעלאה נכשלת: מריצים גם את הקטע הבא ומנסים שוב. ${sqlL}${pre(sqlD)}</li></ol></details>
  <details><summary>גיבוי נתונים ידני</summary><ol>
- <li>ב-SQL Editor מריצים select * from services; (וכך גם vehicles, km_updates, profiles).</li>
+ <li>ב-SQL Editor מריצים select * from services; (וכך גם vehicles, km_updates, profiles). ${sqlL}</li>
  <li>בתוצאות לוחצים Export ← CSV ושומרים את הקובץ.</li>
  <li>בתוכנית החינמית אין גיבוי אוטומטי, ולכן כדאי לעשות את זה אחת לכמה שבועות.</li></ol></details>
  <details><summary>בעיות נפוצות</summary><ol>
  <li>"אימייל או סיסמה שגויים": אימייל באותיות קטנות ואיפוס סיסמה לפי המדריך.</li>
- <li>נהג חדש לא מופיע: להריץ את שאילתת הפרופילים.</li>
- <li>רואים גרסה ישנה: לפתוח מהכתובת, או בלשונית גלישה בסתר.</li>
- <li>"הקפיצה בק"מ גדולה מדי": לתקן ב-ניהול ← עריכת ק"מ לרכב.</li></ol></details>`;
+ <li>נהג חדש לא מופיע: להריץ את שאילתת הפרופילים (בקטע "הוספת נהג חדש"). ${sqlL}</li>
+ <li>רואים גרסה ישנה: לפתוח מהכתובת, או בלשונית גלישה בסתר. ${L(site,'פתיחת האתר')}</li>
+ <li>"הקפיצה בק"מ גדולה מדי": לתקן ב-ניהול ← עריכת ק"מ לרכב. ${go('mng','sec-kmfix','מעבר לעריכת ק"מ')}</li>
+ <li>האתר לא נטען או מציג שגיאה אחרי כמה ימים בלי שימוש: ייתכן ש-Supabase השהה את הפרויקט. נכנסים לדף הפרויקט ולוחצים Restore project (או Resume). ${L(sb0,'דף הפרויקט')}</li></ol></details>`;
 }
 function render(){
  const m=me.role==='manager';
  $('#who').innerHTML=`<small>${esc(me.full_name)}</small><button class="btn ghost sm" data-a="out">יציאה</button>`;
  const tabs=m?[['dash','סקירה'],['hist','טיפולים'],['mng','ניהול'],['help','מדריך']]:[];
  $('#tabs').innerHTML=tabs.map(([k,t])=>`<button class="tab ${ui.tab===k?'on':''}" data-a="tab" data-v="${k}">${t}</button>`).join('');
- $('#view').innerHTML=m?(ui.tab==='dash'?viewDash():ui.tab==='hist'?svcForm()+'<h2>כל הטיפולים</h2>'+svcTable(D.services):ui.tab==='help'?viewHelp():viewManage()):viewDriver();
+ if(ui.vid&&!byId(ui.vid))ui.vid=null;
+ $('#view').innerHTML=m?(ui.tab==='dash'?(ui.vid?viewVeh(byId(ui.vid)):viewDash()):ui.tab==='hist'?viewHist():ui.tab==='help'?viewHelp():viewManage()):viewDriver();
+ drawInst();
 }
+let vh=false,skipPop=false,vy=0;
+function openVeh(id){vy=window.scrollY;ui.vid=id;if(!vh){history.pushState({veh:1},'');vh=true}render();window.scrollTo(0,0)}
+function closeVeh(){ui.vid=null;if(vh){vh=false;skipPop=true;setTimeout(()=>{skipPop=false},600);history.back()}}
+window.addEventListener('popstate',()=>{if(skipPop){skipPop=false;return}if(ui.vid){ui.vid=null;vh=false;render();window.scrollTo(0,vy)}});
 let tt;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2400)}
 function res(e,ok){
  if(!e)return[1,ok];console.error(e);const m=e.message||'';
  return[0,m.includes('cannot decrease')?'הקילומטראז\' לא יכול לרדת':e.code==='23505'?'מספר הרישוי כבר קיים':'הפעולה נכשלה, נסה שוב'];
 }
-function shrink(file){
+function shrink(file,max=1600){
  return new Promise((ok,no)=>{
   const img=new Image(),u=URL.createObjectURL(file);
   img.onload=()=>{
-   const k=Math.min(1,1600/Math.max(img.width,img.height)),c=document.createElement('canvas');
+   const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');
    c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
    c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);
    c.toBlob(b=>b?ok(b):no(new Error('blob')),'image/jpeg',0.8);
@@ -270,24 +543,79 @@ function shrink(file){
   img.src=u;
  });
 }
+async function readInvoice(blob){
+ try{
+  const image=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=no;r.readAsDataURL(blob)});
+  const t=new Promise((_,no)=>setTimeout(()=>no(new Error('timeout')),45000));
+  const{data,error}=await Promise.race([sb.functions.invoke('read-invoice',{body:{image}}),t]);
+  if(error||!data||!data.ok||!data.data||data.data.readable===false)return null;
+  return data.data;
+ }catch(e){console.error(e);return null}
+}
+function parseInv(d,v){
+ const dg=x=>String(x??'').replace(/\D/g,'');
+ let date=null,dateBad=false;
+ if(d.date){
+  const t=Date.parse(d.date),maxD=new Date(Date.now()+DAY).toISOString().slice(0,10);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(d.date)&&t&&d.date<=maxD&&t>Date.now()-400*DAY)date=d.date;else dateBad=true;
+ }
+ let cost=Number(d.cost);cost=Number.isFinite(cost)&&cost>0&&cost<1e6?Math.round(cost*100)/100:null;
+ let km=Math.round(Number(d.km));if(!Number.isFinite(km)||km<=0)km=null;
+ if(km!=null&&v&&(km>v.km+JUMP||km<v.km-JUMP))km=null;
+ const pl=dg(d.plate),vp=dg(v&&v.plate);
+ return{date,dateBad,cost,km,garage:d.garage?String(d.garage).trim().slice(0,80):null,plate:pl,plateBad:!!(pl&&vp&&pl!==vp)};
+}
+function svcManual(f,r,msg){
+ const m=f.querySelector('.manual');if(!m)return;
+ const v=byId(f.elements.vid.value);r=r||{};
+ m.hidden=false;f.elements.manual.value='1';
+ f.elements.date.value=r.date||today();
+ f.elements.km.value=r.km??(v?v.km:'');
+ f.elements.cost.value=r.cost??'';
+ f.elements.garage.value=r.garage||'';
+ const w=f.querySelector('.svcmsg');w.textContent=msg;w.hidden=false;
+ const n=f.querySelector('.note');if(f.elements.uploaded.value){n.textContent='✓ החשבונית הועלתה, אין צורך לצלם שוב.';n.hidden=false}else n.hidden=true;
+ w.scrollIntoView({block:'center'});
+}
 const H={
  async login(o){const{error}=await sb.auth.signInWithPassword({email:o.email.trim().toLowerCase(),password:o.password});if(error){console.error(error);return[0,error.name==='AuthRetryableFetchError'?'אין חיבור לשרת. פתח את האתר בכתובת רגילה בדפדפן':'אימייל או סיסמה שגויים']}await start();return[1,'']},
  async km(o){const v=byId(o.vid);if(v&&+o.km>v.km+JUMP)return[0,jumpMsg()];const{error}=await sb.from('km_updates').insert({vehicle_id:o.vid,km:+o.km});return res(error,'הק"מ עודכן')},
- async svc(o){
-  const v0=byId(o.vid);if(me.role!=='manager'&&v0&&+o.km>v0.km+JUMP)return[0,jumpMsg()];
-  let path=null;
+ async svc(o,f){
+  const m=me.role==='manager',v=byId(o.vid),manual=o.manual==='1';
   const rf=o.receipt&&o.receipt.size?o.receipt:(o.receipt2&&o.receipt2.size?o.receipt2:null);
-  if(me.role!=='manager'&&!rf)return[0,'צריך לצרף צילום קבלה'];
+  let path=o.uploaded||null,blob=null;
   if(rf){
-   toast('מעלה קבלה...');
-   try{
-    const blob=await shrink(rf);path=`${o.vid}/${crypto.randomUUID()}.jpg`;
-    const{error:ue}=await sb.storage.from('invoices').upload(path,blob,{contentType:'image/jpeg'});
-    if(ue){console.error(ue);return[0,'העלאת הקבלה נכשלה, נסה שוב']}
-   }catch(e){console.error(e);return[0,'לא ניתן לעבד את התמונה']}
+   try{blob=await shrink(rf)}catch(e){console.error(e);return[0,'לא ניתן לעבד את התמונה']}
+   if(path){sb.storage.from('invoices').remove([path]).catch(()=>{});path=null;f.elements.uploaded.value=''}
   }
+  if(!blob&&!path){
+   if(!m)return[0,'צריך לצרף צילום חשבונית'];
+   if(!manual){svcManual(f,null,'לא צורפה חשבונית. מלאו את הפרטים ידנית ושמרו.');return[0,'']}
+  }
+  if(blob){
+   f.querySelector('button').textContent='מעלה חשבונית...';
+   const p=`${o.vid}/${crypto.randomUUID()}.jpg`;
+   const{error:ue}=await sb.storage.from('invoices').upload(p,blob,{contentType:'image/jpeg'});
+   if(ue){console.error(ue);return[0,'העלאת החשבונית נכשלה, נסה שוב']}
+   path=p;f.elements.uploaded.value=p;f.elements.receipt.value='';f.elements.receipt2.value='';
+  }
+  if(!manual){
+   if(!blob){svcManual(f,null,'לא הצלחנו לקרוא את החשבונית. מלאו את הפרטים ושמרו.');return[0,'']}
+   f.querySelector('button').textContent='קורא את החשבונית...';
+   const raw=await readInvoice(blob),r=raw?parseInv(raw,v):null;
+   const why=!raw?'לא הצלחנו לקרוא את החשבונית. מלאו את הפרטים ושמרו.'
+    :r.plateBad?`מספר הרכב בחשבונית (${r.plate}) שונה ממספר הרכב שנבחר. בדקו שזו החשבונית הנכונה, ואם כן שמרו.`
+    :r.cost==null?'לא מצאנו סכום בחשבונית. השלימו את הפרטים ושמרו.'
+    :r.dateBad?'התאריך בחשבונית לא ברור. בדקו אותו ושמרו.':'';
+   if(why){svcManual(f,r,why);return[0,'']}
+   const row={vehicle_id:o.vid,type:o.type,service_date:r.date||today(),km:r.km??(v?v.km:0),cost:r.cost,garage:r.garage,invoice_path:path};
+   const{error}=await sb.from('services').insert(row);
+   if(error){console.error(error);svcManual(f,r,'הטיפול לא נשמר. בדקו את הפרטים ונסו שוב.');return[0,'']}
+   return[1,`נשמר: ₪${fmt(row.cost)}${row.garage?' · '+row.garage:''} · ${fd(row.service_date)}`];
+  }
+  if(!o.date||o.km===''||o.km==null)return[0,'צריך למלא תאריך וק"מ'];
+  if(!m&&v&&+o.km>v.km+JUMP)return[0,jumpMsg()];
   const{error}=await sb.from('services').insert({vehicle_id:o.vid,type:o.type,service_date:o.date,km:+o.km,cost:+o.cost||0,garage:o.garage||null,invoice_path:path});
-  if(error&&path)await sb.storage.from('invoices').remove([path]);
   return res(error,'הטיפול נשמר')
  },
  async veh(o){const{error}=await sb.from('vehicles').insert({plate:o.plate.trim(),model:o.model.trim(),year:num(o.year),driver_id:o.driverId||null,km:+o.km,test_date:o.test||null,insurance_date:o.ins||null});return res(error,'הרכב נוסף')},
@@ -300,9 +628,9 @@ const H={
 };
 document.addEventListener('submit',async e=>{
  const f=e.target.closest('form[data-f]');if(!f)return;e.preventDefault();
- const b=f.querySelector('button');b.disabled=true;
- const[ok,msg]=await H[f.dataset.f](Object.fromEntries(new FormData(f)));
- b.disabled=false;
+ const b=f.querySelector('button'),t0=b.textContent;b.disabled=true;
+ const[ok,msg]=await H[f.dataset.f](Object.fromEntries(new FormData(f)),f);
+ b.disabled=false;b.textContent=t0;
  if(ok&&f.dataset.f!=='login'){await load(me.id);render()}
  if(msg)toast(msg);
 });
@@ -310,16 +638,20 @@ document.addEventListener('click',async e=>{
  if(e.target.closest('#ov')){$('#ov').classList.remove('on');return}
  const b=e.target.closest('[data-a]');if(!b)return;
  const a=b.dataset.a;
- if(a==='tab'){ui.tab=b.dataset.v;render()}
- if(a==='rc'){
+ if(a==='veh')openVeh(b.dataset.id);
+ if(a==='back'){closeVeh();render();window.scrollTo(0,vy)}
+ if(a==='tab'){closeVeh();ui.tab=b.dataset.v;ui.year=null;const to=b.dataset.to;render();const t=to&&document.getElementById(to);if(t)t.scrollIntoView();else window.scrollTo(0,0)}
+ if(a==='costyear'){ui.tab='hist';ui.year=new Date().getFullYear();render();window.scrollTo(0,0)}
+ if(a==='allsvc'){ui.year=null;render();window.scrollTo(0,0)}
+ if(a==='install'&&instEv){const ev=instEv;instEv=null;ev.prompt();try{await ev.userChoice}catch(e){}drawInst()} if(a==='rc'){
   const{data,error}=await sb.storage.from('invoices').createSignedUrl(b.dataset.p,300);
   if(error){toast('לא ניתן לפתוח את הקבלה');return}
-  $('#ov').innerHTML=`<img src="${data.signedUrl}" alt="קבלה">`;$('#ov').classList.add('on');
+  $('#ov').innerHTML=`<img src="${data.signedUrl}" alt="מסמך">`;$('#ov').classList.add('on');
  }
  if(a==='copy'){
   try{await navigator.clipboard.writeText(b.previousElementSibling.textContent);toast('הועתק')}catch(e){toast('לא ניתן להעתיק, סמן ידנית')}
  }
- if(a==='out'){await sb.auth.signOut();showLogin()}
+ if(a==='out'){ui.vid=null;await sb.auth.signOut();showLogin()}
  if(a==='rename'){
   const[ni,pi]=b.closest('.row').querySelectorAll('input');const name=ni.value.trim();if(!name)return;
   const{error}=await sb.from('profiles').update({full_name:name,phone:pi.value.trim()||null}).eq('id',b.dataset.id);
@@ -331,6 +663,24 @@ document.addEventListener('change',async e=>{
  const{error}=await sb.from('vehicles').update({driver_id:e.target.value||null}).eq('id',id);
  const[ok,msg]=res(error,'השיוך עודכן');if(ok){await load(me.id);render()}toast(msg);
 });
+document.addEventListener('change',async e=>{
+ const t=e.target,vid=t.dataset&&t.dataset.lic;if(!vid||!t.files||!t.files[0])return;
+ const f=t.files[0],old=(byId(vid)||{}).license_path;t.value='';
+ toast('מעלה את הרישיון...');
+ let path=null;
+ try{
+  const blob=await shrink(f,2200);path=`${vid}/license-${crypto.randomUUID()}.jpg`;
+  const{error:ue}=await sb.storage.from('invoices').upload(path,blob,{contentType:'image/jpeg'});
+  if(ue){console.error(ue);toast('העלאת הרישיון נכשלה. הפרטים במדריך, תחת "רישיון רכב"');return}
+ }catch(err){console.error(err);toast('לא ניתן לעבד את התמונה');return}
+ const{error}=await sb.from('vehicles').update({license_path:path,license_at:new Date().toISOString()}).eq('id',vid);
+ if(error){console.error(error);await sb.storage.from('invoices').remove([path]);toast((error.message||'').includes('license_')?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "רישיון רכב"':'השמירה נכשלה, נסה שוב');return}
+ if(old){try{await sb.storage.from('invoices').remove([old])}catch(err){console.error(err)}}
+ await load(me.id);render();toast('הרישיון נשמר');
+});
+document.addEventListener('change',e=>{const t=e.target;if(t.matches&&t.matches('form[data-f="svc"] select[name="type"]')){const m=t.form.querySelector('.more');if(m)m.hidden=!t.value}});
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();instEv=e;drawInst()});
+window.addEventListener('appinstalled',()=>{instEv=null;instDone=true;drawInst();if(sb&&me)track(me.id,true)});
 init();
 </script>
 </body>
