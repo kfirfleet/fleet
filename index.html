@@ -179,6 +179,7 @@ async function track(uid,force){
   if(error)console.warn('app_installs',error.message);
  }catch(e){console.warn(e)}
 }
+const FN_PUSH='swift-handler';
 const PUSH_OK=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
 const key2buf=k=>Uint8Array.from(atob((k+'='.repeat((4-k.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
 const PUSH_SETUP='ההתראות עדיין לא הוגדרו בשרת. ההוראות במדריך, תחת "התראות על עדכון ק"מ"';
@@ -209,7 +210,7 @@ async function pushEnable(){
   if(perm!=='granted')return[0,'לא אושרו התראות. אפשר לאשר אותן בהגדרות הדפדפן'];
   const reg=await pushReg();if(!reg)return[0,'לא ניתן להפעיל התראות במכשיר הזה'];
   await navigator.serviceWorker.ready;
-  const{data,error}=await sb.functions.invoke('km-reminders',{body:{mode:'key'}});
+  const{data,error}=await sb.functions.invoke(FN_PUSH,{body:{mode:'key'}});
   if(error||!data||!data.key){console.error(error);return[0,PUSH_SETUP]}
   let sub=await reg.pushManager.getSubscription();
   if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key2buf(data.key)});
@@ -451,7 +452,7 @@ grant execute on function public.km_stale_drivers(int) to service_role;`;
 create extension if not exists pg_net;
 select cron.schedule('km-reminders', '0 7 1 * *', $$
   select net.http_post(
-    url := 'https://rodlmlsdgwqyxqaimkfm.supabase.co/functions/v1/km-reminders',
+    url := 'https://rodlmlsdgwqyxqaimkfm.supabase.co/functions/v1/swift-handler',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'x-cron-secret', (select value from public.app_secrets where key = 'cron')
@@ -460,7 +461,7 @@ select cron.schedule('km-reminders', '0 7 1 * *', $$
   );
 $$);`;
  const sqlR1=`select net.http_post(
-  url := 'https://rodlmlsdgwqyxqaimkfm.supabase.co/functions/v1/km-reminders',
+  url := 'https://rodlmlsdgwqyxqaimkfm.supabase.co/functions/v1/swift-handler',
   headers := jsonb_build_object(
     'Content-Type', 'application/json',
     'x-cron-secret', (select value from public.app_secrets where key = 'cron')
@@ -796,14 +797,14 @@ Deno.serve(async (req) => {
  <li>מה זה עושה: ב-1 בכל חודש בבוקר נשלחת התראה לטלפון של כל נהג שלא עדכן ק"מ ב-20 הימים האחרונים. ההתראה מגיעה רק לנהגים שהפעילו התראות באפליקציה. בלי עלות ובלי שירות חיצוני.</li>
  <li>שלב 1: מעלים ל-GitHub שני קבצים יחד: index.html ו-sw.js (בדף ההעלאה בוחרים את שניהם). ${L(gh+'/upload/main','דף ההעלאה')}</li>
  <li>שלב 2: ב-SQL Editor מריצים את הקטע הבא (פעם אחת). אמור להופיע Success. ${sqlL}${pre(sqlP)}</li>
- <li>שלב 3: ב-Supabase: Edge Functions ← Deploy a new function ← Via Editor. נותנים לפונקציה את השם km-reminders, מוחקים את הקוד שיש שם, מדביקים את הקוד הבא ולוחצים Deploy function. ${L(sb0+'/functions','פתיחת Edge Functions')}${pre(kmFnCode)}</li>
- <li>שלב 4, חשוב: נכנסים לפונקציה km-reminders, ללשונית Details, ומכבים את Verify JWT. הפונקציה בודקת הרשאות בעצמה. בלי זה הטיימר החודשי נכשל עם שגיאה 401. אם אי אפשר למצוא את המתג, שלח לי צילום מסך.</li>
+ <li>שלב 3: ב-Supabase: Edge Functions ← Deploy a new function ← Via Editor. מוחקים את הקוד שיש שם, מדביקים את הקוד הבא ולוחצים Deploy function. Supabase נותן לפונקציה שם אוטומטי שאי אפשר לשנות. האתר מוגדר לשם swift-handler. אם אצלך יצא שם אחר, שלח לי אותו ואעדכן. ${L(sb0+'/functions','פתיחת Edge Functions')}${pre(kmFnCode)}</li>
+ <li>שלב 4, חשוב: נכנסים לפונקציה swift-handler, ללשונית Settings. ליד "Verify JWT with legacy secret" לוחצים על המתג הירוק כדי שיהפוך לאפור, ואז לוחצים Save changes. הפונקציה בודקת הרשאות בעצמה. בלי זה הטיימר החודשי נכשל עם שגיאה 401.</li>
  <li>שלב 5: ב-SQL Editor מריצים את הקטע הבא, שקובע שההתראה תישלח ב-1 בכל חודש. אם מופיעה שגיאה על pg_cron או pg_net, ב-Supabase נכנסים ל-Integrations, מפעילים Cron ו-Webhooks, ומריצים שוב. ${sqlL}${pre(sqlQ)}</li>
  <li>שלב 6: באתר, ניהול ← "התראות על עדכון ק"מ": לוחצים "הפעלה במכשיר הזה", מאשרים, ואז "בדיקה אצלי". אמורה להגיע התראה. ${go('mng','sec-push','מעבר להתראות')}</li>
  <li>כל נהג מפעיל אצלו: בכרטיס "התראות על עדכון ק"מ" בראש האפליקציה לוחצים "הפעלת התראות" ומאשרים. באייפון זה עובד רק אחרי שהאפליקציה מותקנת במסך הבית (iOS 16.4 ומעלה).</li>
  <li>לשלוח מיד לכל מי שלא עדכן: ניהול ← "שליחה עכשיו". ברשימה רואים מי בלי התראות פעילות. להם שולחים תזכורת בוואטסאפ מהסקירה.</li>
  <li>בדיקה של הטיימר עצמו (בלי לשלוח כלום): מריצים את הקטע הראשון, מחכים כמה שניות, ואז את השני. אמור להופיע status_code 200 ותוכן שמתחיל ב-{"ok":true. ${sqlL}${pre(sqlR1)}${pre(sqlR2)}</li>
- <li>אם מופיע 401: Verify JWT עדיין דלוק (שלב 4). אם מופיע 500 עם rpc: לא הורץ שלב 2.</li></ol></details>
+ <li>אם מופיע 401: המתג Verify JWT עדיין דלוק (שלב 4). אם מופיע 500 עם rpc: לא הורץ שלב 2.</li></ol></details>
  <details><summary>קריאת חשבוניות אוטומטית</summary><ol>
  <li>הנהג בוחר רק סוג טיפול ומצלם את החשבונית. האתר קורא ממנה את התאריך, הסכום, שם המוסך והק"מ, ושומר לבד. אם אין ק"מ בחשבונית, נלקח הק"מ האחרון של הרכב.</li>
  <li>אם משהו חסר או לא ברור (סכום, תאריך, או מספר רכב שונה מהרכב שנבחר), נפתחים לנהג השדות עם מה שנקרא, והוא משלים ושומר.</li>
@@ -813,7 +814,7 @@ Deno.serve(async (req) => {
  <li>שלב 3: Edge Functions ← Deploy a new function ← Via Editor. נותנים לפונקציה את השם read-invoice, מוחקים את הקוד שיש שם, מדביקים את הקוד הבא ולוחצים Deploy function. ${L(sb0+'/functions','פתיחת Edge Functions')}${pre(fnCode)}</li>
  <li>בדיקה: באתר ← טיפולים, בוחרים רכב וסוג טיפול ומצלמים חשבונית. אם הכול תקין, הטיפול נשמר לבד עם הסכום והתאריך מהחשבונית.</li>
  <li>אם זה לא עובד: ב-Supabase, בתוך Edge Functions ← read-invoice, בלשונית Logs רואים את השגיאה. "ai 401" או "ai 400" אומר שהמפתח שגוי או שנגמר הקרדיט.</li>
- <li>אם מתקבלת שגיאת 401 או Invalid JWT: בלשונית Details של הפונקציה מכבים את Verify JWT. הפונקציה בודקת בעצמה שהמשתמש מחובר.</li>
+ <li>אם מתקבלת שגיאת 401 או Invalid JWT: בלשונית Settings של הפונקציה מכבים את המתג Verify JWT with legacy secret ולוחצים Save changes. הפונקציה בודקת בעצמה שהמשתמש מחובר.</li>
  <li>שגיאה בקריאה לא פוגעת בנתונים: הנהג רואה את השדות ומשלים אותם בעצמו.</li></ol></details>
  <details><summary>רישיון רכב</summary><ol>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlC)}</li>
@@ -971,12 +972,12 @@ document.addEventListener('click',async e=>{
  }
  if(a==='pushon'){b.disabled=true;const[ok,msg]=await pushEnable();b.disabled=false;toast(msg);if(ok){await load(me.id);render()}}
  if(a==='pushtest'){
-  b.disabled=true;const{data,error}=await sb.functions.invoke('km-reminders',{body:{mode:'test'}});b.disabled=false;
+  b.disabled=true;const{data,error}=await sb.functions.invoke(FN_PUSH,{body:{mode:'test'}});b.disabled=false;
   toast(error||!data||!data.ok?PUSH_SETUP:data.sent?'נשלחה התראת בדיקה':'אין התראות פעילות במכשיר הזה. לוחצים "הפעלה במכשיר הזה"',4000);
  }
  if(a==='pushnow'){
   if(!confirm('לשלוח עכשיו התראה לכל הנהגים שלא עדכנו ק"מ ב-20 הימים האחרונים?'))return;
-  b.disabled=true;const{data,error}=await sb.functions.invoke('km-reminders',{body:{mode:'now'}});b.disabled=false;
+  b.disabled=true;const{data,error}=await sb.functions.invoke(FN_PUSH,{body:{mode:'now'}});b.disabled=false;
   if(error||!data||!data.ok){toast(PUSH_SETUP,4000);return}
   toast(data.drivers===0?'כל הנהגים עדכנו ק"מ, אין למי לשלוח':`נשלחו ${data.sent} התראות. בלי התראות פעילות: ${data.noPush.length?data.noPush.join(', '):'אין'}`,6000);
  }
