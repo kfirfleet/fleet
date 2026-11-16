@@ -108,7 +108,8 @@ async function load(uid){
  me=D.profiles.find(p=>p.id===uid)||{id:uid,role:'driver',full_name:''};
  D.inst=[];
  D.push=null;
- if(me.role==='manager'){const q=await sb.from('app_installs').select('*');D.inst=q.error?null:(q.data||[]);const w=await sb.from('push_subs').select('user_id');D.push=w.error?null:(w.data||[])}
+ D.mail=null;
+ if(me.role==='manager'){const q=await sb.from('app_installs').select('*');D.inst=q.error?null:(q.data||[]);const w=await sb.from('push_subs').select('user_id');D.push=w.error?null:(w.data||[]);const x=await sb.from('invoice_mail').select('email').maybeSingle();D.mail=x.error?null:{email:(x.data&&x.data.email)||''}}
 }
 function showLogin(){
  me=null;$('#who').innerHTML='';$('#tabs').innerHTML='';drawInst();drawPush();
@@ -231,6 +232,11 @@ function pushBox(){
  return `${h} (${ds.filter(p=>on.has(p.id)).length} מתוך ${ds.length})</h2><div class="card list">${rows||'<small>עוד אין נהגים</small>'}</div>
  <div class="card"><small>ב-1 בכל חודש בבוקר נשלחת התראה לנהגים שלא עדכנו ק"מ ב-20 הימים האחרונים. נהג בלי התראות פעילות מקבל תזכורת רק בוואטסאפ, מכפתור "שלח תזכורת" בסקירה.</small><div class="tags" style="margin-top:10px"><button class="btn sm" data-a="pushnow">שליחה עכשיו</button><button class="btn ghost sm" data-a="pushtest">בדיקה אצלי</button><button class="btn ghost sm" data-a="pushon">הפעלה במכשיר הזה</button></div></div>`;
 }
+const MAIL_SETUP='לא ניתן לשלוח. בדקו שהפונקציה swift-handler עודכנה. ההוראות במדריך, תחת "חשבוניות להנהלת החשבונות"';
+function mailBox(){
+ if(!D.mail)return `<h2 id="sec-mail">חשבוניות להנהלת החשבונות</h2><div class="card"><small>כדי לשלוח חשבוניות להנהלת החשבונות צריך הגדרה חד-פעמית ב-Supabase. ההוראות במדריך, תחת "חשבוניות להנהלת החשבונות".</small></div>`;
+ return `<form id="sec-mail" class="card form" data-f="mail"><h3>חשבוניות להנהלת החשבונות</h3><label>מייל של הנהלת החשבונות<input type="email" name="email" value="${esc(D.mail.email)}" placeholder="accounting@example.com" inputmode="email" dir="ltr" autocomplete="off"></label><small>כל חשבונית שמצלמים באתר נשלחת לכתובת הזו כקובץ מצורף. בכותרת המייל כתוב עבור איזה טיפול ואיזה רכב, למשל "חשבונית: טיפול תקופתי עבור רכב 26589103". שאר הפרטים לא נשלחים. כתובת ריקה מכבה את השליחה. כפתור הבדיקה שולח מייל אליכם, לא להנהלת החשבונות.</small><div class="tags"><button class="btn">שמירה</button><button type="button" class="btn ghost" data-a="mailtest">שליחת מייל בדיקה</button></div></form>`;
+}
 function attention(){
  return D.vehicles.map(v=>{
   const s=svcStatus(v),items=[],age=v.driver_id?kmAge(v):0;
@@ -269,7 +275,8 @@ function svcForm(vid){
  <label>סוג טיפול<select name="type" required><option value="" selected disabled>בחרו סוג טיפול</option>${Object.entries(TYPES).map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}</select></label>
  <div class="more" hidden>
  <input type="hidden" name="manual" value=""><input type="hidden" name="uploaded" value="">
- <p class="note">מצלמים את החשבונית, והאתר קורא ממנה לבד את התאריך, הסכום, המוסך והק"מ.</p>
+ <p class="note">${m?'מצלמים חשבונית והאתר ינסה לקרוא ממנה את הפרטים, או לוחצים "מילוי ידני" ומזינים בעצמכם.':'מצלמים את החשבונית, והאתר קורא ממנה לבד את התאריך, הסכום, המוסך והק"מ.'}</p>
+ ${m?'<button type="button" class="btn ghost sm" data-a="svcman">מילוי ידני</button>':''}
  <label>צילום חשבונית${m?' (אופציונלי)':''}<input type="file" name="receipt" accept="image/*" capture="environment"></label>
  <label>או בחירת תמונה מהגלריה<input type="file" name="receipt2" accept="image/*"></label>
  <p class="svcmsg warn" role="alert" hidden></p>
@@ -343,7 +350,7 @@ function viewManage(){
  <form id="sec-kmfix" class="card form" data-f="kmfix"><h3>עריכת ק"מ לרכב</h3><label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)} · ${fmt(v.km)} ק"מ</option>`).join('')}</select></label><label>ק"מ חדש<input type="number" name="km" min="0" required></label><button class="btn">עדכון ק"מ</button></form>
  <h2 id="sec-assign">שיוך נהגים לרכבים</h2><div class="card list">${D.vehicles.map(v=>`<div class="row"><span>${vname(v)}</span><select data-assign="${v.id}">${opts(v.driver_id)}</select></div>`).join('')||'עוד אין רכבים'}</div>
  ${licBox()}
- <h2 id="sec-drivers">נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>${installBox()}${pushBox()}`;
+ <h2 id="sec-drivers">נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>${installBox()}${pushBox()}${mailBox()}`;
 }
 function viewDriver(){
  const v=D.vehicles[0];
@@ -469,7 +476,47 @@ $$);`;
   body := '{"mode":"cron","dry":true}'::jsonb
 );`;
  const sqlR2=`select status_code, content::text from net._http_response order by id desc limit 1;`;
- const kmFnCode=String.raw`// km-reminders: התראות לטלפון על עדכון ק"מ (Web Push). לא צריך מפתחות חיצוניים.
+ const sqlM=`create extension if not exists pg_net;
+
+create table if not exists public.invoice_mail (
+  id boolean primary key default true check (id),
+  email text
+);
+insert into public.invoice_mail (id) values (true) on conflict (id) do nothing;
+alter table public.invoice_mail enable row level security;
+grant select, insert, update on public.invoice_mail to authenticated;
+grant all on public.invoice_mail to service_role;
+drop policy if exists invoice_mail_mgr on public.invoice_mail;
+create policy invoice_mail_mgr on public.invoice_mail for all to authenticated
+  using (public.is_manager()) with check (public.is_manager());
+
+create or replace function public.mail_invoice()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.invoice_path is not null then
+    perform net.http_post(
+      url := 'https://rodlmlsdgwqyxqaimkfm.supabase.co/functions/v1/swift-handler',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'x-cron-secret', (select value from public.app_secrets where key = 'cron')
+      ),
+      body := jsonb_build_object('mode', 'invoice', 'service_id', new.id),
+      timeout_milliseconds := 20000
+    );
+  end if;
+  return new;
+exception when others then
+  return new;
+end $$;
+revoke execute on function public.mail_invoice() from public, anon, authenticated;
+
+drop trigger if exists services_mail_invoice on public.services;
+create trigger services_mail_invoice after insert on public.services
+  for each row execute function public.mail_invoice();`;
+ const sqlR3=`select status_code, content::text from net._http_response order by id desc limit 3;`;
+ const kmFnCode=String.raw`// km-reminders: (1) התראות לטלפון על עדכון ק"מ (Web Push), (2) שליחת חשבוניות להנהלת החשבונות במייל.
+// התראות לא צריכות מפתחות חיצוניים. שליחת מייל עוברת דרך סקריפט קטן ב-Gmail שלך (Google Apps Script),
+// וכתובת הסקריפט נשמרת בסוד MAIL_SCRIPT_URL.
 // חשוב: אחרי הפריסה לכבות את Verify JWT של הפונקציה (הפונקציה בודקת הרשאות בעצמה).
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
@@ -569,6 +616,68 @@ async function push(sub: Sub, message: unknown, v: Vapid, pub: string) {
   return r.status
 }
 
+// ---------- שליחת חשבונית למייל (דרך סקריפט ב-Gmail) ----------
+type Admin = ReturnType<typeof createClient>
+const toB64 = (u: Uint8Array) => {
+  let s = ''
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000))
+  return btoa(s)
+}
+const TYPES: Record<string, string> = {
+  periodic: 'טיפול תקופתי',
+  tires: 'החלפת צמיגים',
+  brakes: 'בלמים',
+  repair: 'תקלה / תיקון',
+  other: 'טיפול',
+}
+async function mailTo(admin: Admin) {
+  const { data } = await admin.from('invoice_mail').select('email').maybeSingle()
+  return String(data?.email ?? '').trim()
+}
+async function sendMail(to: string, subject: string, body: string, file?: { filename: string; mime: string; data: string }) {
+  const url = Deno.env.get('MAIL_SCRIPT_URL')
+  if (!url) return { ok: false, error: 'no MAIL_SCRIPT_URL secret' }
+  let r: Response
+  try {
+    r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, subject, body, ...file }),
+      redirect: 'follow',
+    })
+  } catch (e) {
+    return { ok: false, error: 'script unreachable: ' + String(e) }
+  }
+  const txt = await r.text()
+  let j: { ok?: boolean; error?: string } | null = null
+  try {
+    j = JSON.parse(txt)
+  } catch (_e) {
+    j = null
+  }
+  if (!j) return { ok: false, error: 'script bad reply ' + r.status + ': ' + txt.replace(/\s+/g, ' ').slice(0, 120) }
+  if (!j.ok) return { ok: false, error: 'script: ' + String(j.error ?? 'unknown').slice(0, 200) }
+  return { ok: true }
+}
+async function sendInvoice(admin: Admin, serviceId: string) {
+  const to = await mailTo(admin)
+  if (!to) return reply({ ok: true, skipped: 'no_email' })
+  const { data: s } = await admin.from('services').select('id,vehicle_id,type,service_date,invoice_path').eq('id', serviceId).maybeSingle()
+  if (!s || !s.invoice_path) return reply({ ok: true, skipped: 'no_invoice' })
+  const { data: v } = await admin.from('vehicles').select('plate').eq('id', s.vehicle_id).maybeSingle()
+  const plate = String(v?.plate ?? '').trim()
+  const what = (TYPES[s.type] ?? 'טיפול') + (plate ? ' עבור רכב ' + plate : '')
+  const dl = await admin.storage.from('invoices').download(s.invoice_path)
+  if (dl.error || !dl.data) return reply({ ok: false, error: 'download: ' + (dl.error?.message ?? 'empty') }, 500)
+  const ext = (String(s.invoice_path).match(/\.([A-Za-z0-9]{2,4})$/)?.[1] ?? 'jpg').toLowerCase()
+  const out = await sendMail(to, 'חשבונית: ' + what, 'מצורפת חשבונית: ' + what + '.', {
+    filename: ['invoice', plate.replace(/[^A-Za-z0-9]/g, ''), String(s.service_date)].filter(Boolean).join('-') + '.' + ext,
+    mime: dl.data.type || 'image/jpeg',
+    data: toB64(new Uint8Array(await dl.data.arrayBuffer())),
+  })
+  return reply(out, out.ok ? 200 : 502)
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
@@ -584,16 +693,38 @@ Deno.serve(async (req) => {
 
     // 1. מי קורא: הטיימר של Supabase (עם סוד), או משתמש מחובר
     let userId = ''
+    let userEmail = ''
     const cronSecret = req.headers.get('x-cron-secret')
     if (cronSecret) {
       const { data } = await admin.from('app_secrets').select('value').eq('key', 'cron').maybeSingle()
-      if (!data || data.value !== cronSecret || mode !== 'cron') return reply({ ok: false, error: 'unauthorized' }, 401)
+      if (!data || data.value !== cronSecret || (mode !== 'cron' && mode !== 'invoice')) {
+        return reply({ ok: false, error: 'unauthorized' }, 401)
+      }
     } else {
       const token = (req.headers.get('Authorization') ?? '').replace('Bearer ', '')
       const { data, error } = await createClient(url, anon, opts).auth.getUser(token)
       if (error || !data.user) return reply({ ok: false, error: 'unauthorized' }, 401)
       userId = data.user.id
+      userEmail = data.user.email ?? ''
     }
+
+    // 1ב. חשבוניות למייל: חשבונית חדשה (מהטריגר של מסד הנתונים) ומייל בדיקה (ממנהל)
+    if (mode === 'invoice') {
+      if (userId) return reply({ ok: false, error: 'forbidden' }, 403)
+      return await sendInvoice(admin, String(body.service_id ?? ''))
+    }
+    if (mode === 'mailtest') {
+      const { data: me } = await admin.from('profiles').select('role').eq('id', userId).maybeSingle()
+      if (!me || me.role !== 'manager') return reply({ ok: false, error: 'forbidden' }, 403)
+      if (!userEmail) return reply({ ok: false, error: 'no_login_email' })
+      const out = await sendMail(
+        userEmail,
+        'בדיקה: שליחת חשבוניות',
+        'זו הודעת בדיקה מאתר צי הרכב. השליחה עובדת. חשבוניות חדשות יישלחו להנהלת החשבונות כקובץ מצורף.',
+      )
+      return reply({ ...out, to: userEmail })
+    }
+    if (mode === 'cron' && userId) return reply({ ok: false, error: 'forbidden' }, 403)
 
     const v = await vapidKeys(admin)
     const pub = b64u(cat(new Uint8Array([4]), unb64u(v.x), unb64u(v.y)))
@@ -658,6 +789,21 @@ Deno.serve(async (req) => {
     return reply({ ok: false, error: String(e) }, 500)
   }
 })`;
+ const gsCode=String.raw`// Fleet invoices: receives a request from the fleet site and sends an e-mail from your Gmail.
+function doPost(e) {
+  var out = { ok: true };
+  try {
+    var d = JSON.parse(e.postData.contents);
+    var msg = { to: d.to, subject: d.subject || 'חשבונית', body: d.body || '' };
+    if (d.data) {
+      msg.attachments = [Utilities.newBlob(Utilities.base64Decode(d.data), d.mime || 'image/jpeg', d.filename || 'invoice.jpg')];
+    }
+    MailApp.sendEmail(msg);
+  } catch (err) {
+    out = { ok: false, error: String(err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}`;
  const fnCode=String.raw`// read-invoice: קורא תמונה של חשבונית מוסך באמצעות Claude
 // ומחזיר תאריך, סכום, שם מוסך וק"מ. נדרש סוד בשם ANTHROPIC_API_KEY.
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -816,6 +962,17 @@ Deno.serve(async (req) => {
  <li>אם זה לא עובד: ב-Supabase, בתוך Edge Functions ← read-invoice, בלשונית Logs רואים את השגיאה. "ai 401" או "ai 400" אומר שהמפתח שגוי או שנגמר הקרדיט.</li>
  <li>אם מתקבלת שגיאת 401 או Invalid JWT: בלשונית Settings של הפונקציה מכבים את המתג Verify JWT with legacy secret ולוחצים Save changes. הפונקציה בודקת בעצמה שהמשתמש מחובר.</li>
  <li>שגיאה בקריאה לא פוגעת בנתונים: הנהג רואה את השדות ומשלים אותם בעצמו.</li></ol></details>
+ <details><summary>חשבוניות להנהלת החשבונות</summary><ol>
+ <li>מה זה עושה: בכל פעם שנשמר טיפול עם תמונת חשבונית (על ידי נהג או על ידי המנהל), נשלח מייל להנהלת החשבונות ובו קובץ החשבונית. בכותרת המייל כתוב עבור איזה טיפול ואיזה רכב (למשל "חשבונית: טיפול תקופתי עבור רכב 26589103"), כך שהנהלת החשבונות לא צריכה לשאול. שאר פרטי הטיפול (עלות, ק"מ, מוסך, נהג) לא נשלחים. השליחה נעשית מהשרת, ולכן היא קורית גם אם הנהג סוגר את האפליקציה מיד אחרי השמירה. המייל נשלח רק כשהטיפול נשמר, לא כשרק מצלמים.</li>
+ <li>איך זה עובד: המייל יוצא מחשבון ה-Gmail שלך, דרך סקריפט קטן של גוגל (Apps Script). בלי עלות ובלי דומיין. גוגל מגבילה חשבון רגיל ל-100 מיילים ביום.</li>
+ <li>שלב 1: ב-SQL Editor מריצים את הקטע הבא (פעם אחת). אמור להופיע Success. ${sqlL}${pre(sqlM)}</li>
+ <li>שלב 2: הסקריפט בגוגל. פותחים script.new בכרום כשהטלפון במצב "אתר למחשב" (בתפריט ⋮ מסמנים Desktop site), מוחקים את כל הקוד שמופיע ומדביקים במקומו את הקוד הבא, ואז שומרים (סמל הדיסקט). ${L('https://script.new','פתיחת פרויקט חדש בגוגל')}${pre(gsCode)}</li>
+ <li>שלב 3: פריסה. למעלה לוחצים Deploy ← New deployment. ליד Select type לוחצים על גלגל השיניים ובוחרים Web app. בשורה Execute as משאירים Me, ובשורה Who has access בוחרים Anyone. לוחצים Deploy ואז Authorize access ובוחרים את חשבון ה-Gmail. אם מופיע "Google hasn't verified this app", לוחצים Advanced ← Go to ... (unsafe) ← Allow. בסוף מעתיקים את ה-Web app URL (הוא נגמר ב-/exec). הכתובת הזו היא כמו סיסמה, לא משתפים אותה.</li>
+ <li>שלב 4: שומרים את הכתובת ב-Supabase: Edge Functions ← Secrets. בשם (Key) כותבים MAIL_SCRIPT_URL, בערך (Value) מדביקים את הכתובת, ולוחצים Save. ${L(sb0+'/functions/secrets','פתיחת Secrets')}</li>
+ <li>שלב 5: מעדכנים את הקוד של הפונקציה swift-handler: Edge Functions ← swift-handler ← לשונית Code, מוחקים את כל הקוד ומדביקים במקומו את הקוד העדכני מהקטע "התראות על עדכון ק"מ" (שלב 3 שם), ואז Deploy updates. אחרי העדכון כדאי לבדוק שבלשונית Settings המתג Verify JWT with legacy secret עדיין כבוי. ${L(sb0+'/functions','פתיחת Edge Functions')}</li>
+ <li>שלב 6: באתר, ניהול ← "חשבוניות להנהלת החשבונות": כותבים את המייל של הנהלת החשבונות ולוחצים שמירה. אחר כך לוחצים "שליחת מייל בדיקה". המייל נשלח אליך (לכתובת שאיתה אתה מתחבר לאתר), לא להנהלת החשבונות. הוא אמור להגיע תוך דקה, ואם לא, בודקים בספאם. ${go('mng','sec-mail','מעבר לחשבוניות להנהלת החשבונות')}</li>
+ <li>לכבות את השליחה: מוחקים את הכתובת ולוחצים שמירה.</li>
+ <li>אם מייל של חשבונית אמיתית לא הגיע: ב-SQL Editor מריצים את השאילתה הבאה ומסתכלים בשורה האחרונה. 401: המתג Verify JWT דלוק. 400 עם bad mode: שלב 5 לא בוצע. 502 עם MAIL_SCRIPT_URL: שלב 4 לא בוצע. 502 עם script bad reply: בפריסה לא נבחר Anyone, או שלא אושרו הרשאות. אחרי שינוי בקוד של הסקריפט צריך לפרוס מחדש: Deploy ← Manage deployments ← סמל העיפרון ← בשורה Version בוחרים New version ← Deploy. ${sqlL}${pre(sqlR3)}</li></ol></details>
  <details><summary>רישיון רכב</summary><ol>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlC)}</li>
  <li>אחרי זה: ניהול ← רישיון רכב. ליד כל רכב לוחצים "העלאה", ומצלמים את הרישיון או בוחרים תמונה מהגלריה. ${go('mng','sec-lic','מעבר לרישיון רכב')}</li>
@@ -895,9 +1052,9 @@ function svcManual(f,r,msg){
  f.elements.km.value=r.km??(v?v.km:'');
  f.elements.cost.value=r.cost??'';
  f.elements.garage.value=r.garage||'';
- const w=f.querySelector('.svcmsg');w.textContent=msg;w.hidden=false;
+ const w=f.querySelector('.svcmsg');w.textContent=msg||'';w.hidden=!msg;
  const n=f.querySelector('.note');if(f.elements.uploaded.value){n.textContent='✓ החשבונית הועלתה, אין צורך לצלם שוב.';n.hidden=false}else n.hidden=true;
- w.scrollIntoView({block:'center'});
+ (msg?w:m).scrollIntoView({block:'center'});
 }
 const H={
  async login(o){const{error}=await sb.auth.signInWithPassword({email:o.email.trim().toLowerCase(),password:o.password});if(error){console.error(error);return[0,error.name==='AuthRetryableFetchError'?'אין חיבור לשרת. פתח את האתר בכתובת רגילה בדפדפן':'אימייל או סיסמה שגויים']}await start();return[1,'']},
@@ -915,7 +1072,7 @@ const H={
    if(!manual){svcManual(f,null,'לא צורפה חשבונית. מלאו את הפרטים ידנית ושמרו.');return[0,'']}
   }
   if(blob){
-   f.querySelector('button').textContent='מעלה חשבונית...';
+   f.querySelector('button:not([type="button"])').textContent='מעלה חשבונית...';
    const p=`${o.vid}/${crypto.randomUUID()}.jpg`;
    const{error:ue}=await sb.storage.from('invoices').upload(p,blob,{contentType:'image/jpeg'});
    if(ue){console.error(ue);return[0,'העלאת החשבונית נכשלה, נסה שוב']}
@@ -923,7 +1080,7 @@ const H={
   }
   if(!manual){
    if(!blob){svcManual(f,null,'לא הצלחנו לקרוא את החשבונית. מלאו את הפרטים ושמרו.');return[0,'']}
-   f.querySelector('button').textContent='קורא את החשבונית...';
+   f.querySelector('button:not([type="button"])').textContent='קורא את החשבונית...';
    const raw=await readInvoice(blob),r=raw?parseInv(raw,v):null;
    const why=!raw?'לא הצלחנו לקרוא את החשבונית. מלאו את הפרטים ושמרו.'
     :r.plateBad?`מספר הרכב בחשבונית (${r.plate}) שונה ממספר הרכב שנבחר. בדקו שזו החשבונית הנכונה, ואם כן שמרו.`
@@ -946,11 +1103,17 @@ const H={
   if(k>v.km+100000)return[0,'הקילומטראז\' גבוה מדי, בדוק שוב'];
   const{error}=await sb.from('vehicles').update({km:k}).eq('id',o.vid);return res(error,'הק"מ עודכן')
  },
+ async mail(o){
+  const e=(o.email||'').trim();
+  if(e&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))return[0,'כתובת המייל לא תקינה'];
+  const{error}=await sb.from('invoice_mail').upsert({id:true,email:e||null},{onConflict:'id'});
+  return res(error,e?'המייל נשמר':'השליחה למייל כובתה')
+ },
  async rules(o){const{error}=await sb.from('settings').update({service_interval_km:+o.km,service_interval_months:+o.months}).eq('id',true);return res(error,'הכללים עודכנו')}
 };
 document.addEventListener('submit',async e=>{
  const f=e.target.closest('form[data-f]');if(!f)return;e.preventDefault();
- const b=f.querySelector('button'),t0=b.textContent;b.disabled=true;
+ const b=f.querySelector('button:not([type="button"])'),t0=b.textContent;b.disabled=true;
  const[ok,msg]=await H[f.dataset.f](Object.fromEntries(new FormData(f)),f);
  b.disabled=false;b.textContent=t0;
  if(ok&&f.dataset.f!=='login'){await load(me.id);render()}
@@ -980,6 +1143,14 @@ document.addEventListener('click',async e=>{
   b.disabled=true;const{data,error}=await sb.functions.invoke(FN_PUSH,{body:{mode:'now'}});b.disabled=false;
   if(error||!data||!data.ok){toast(PUSH_SETUP,4000);return}
   toast(data.drivers===0?'כל הנהגים עדכנו ק"מ, אין למי לשלוח':`נשלחו ${data.sent} התראות. בלי התראות פעילות: ${data.noPush.length?data.noPush.join(', '):'אין'}`,6000);
+ }
+ if(a==='svcman'){const f=b.closest('form');svcManual(f,null,'');b.hidden=true}
+ if(a==='mailtest'){
+  const cur=(D.mail&&D.mail.email)||'';
+  b.disabled=true;toast('שולח מייל בדיקה...');
+  const{data,error}=await sb.functions.invoke(FN_PUSH,{body:{mode:'mailtest'}});b.disabled=false;
+  const er=data&&data.error||'';
+  toast(error||!data?MAIL_SETUP:data.ok?`נשלח מייל בדיקה אל ${data.to}. אם לא הגיע, בדקו בספאם`+(cur?'':'. עוד לא שמרתם כתובת להנהלת החשבונות'):er.includes('MAIL_SCRIPT_URL')?'חסרה כתובת הסקריפט של גוגל ב-Supabase Secrets. ההוראות במדריך, תחת "חשבוניות להנהלת החשבונות"':er.startsWith('script bad reply')?'גוגל לא קיבלה את הבקשה. בדקו שבפריסת הסקריפט נבחר Anyone ושאישרתם הרשאות':er==='no_login_email'?'לחשבון שלכם אין כתובת מייל לשליחת הבדיקה':'השליחה נכשלה: '+er.slice(0,90),7000);
  }
  if(a==='copy'){
   try{await navigator.clipboard.writeText(b.previousElementSibling.textContent);toast('הועתק')}catch(e){toast('לא ניתן להעתיק, סמן ידנית')}
