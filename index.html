@@ -119,11 +119,14 @@ function showLogin(){
  $('#view').innerHTML=`<form class="card form login" data-f="login"><h3>כניסה למערכת</h3><label>אימייל<input type="email" name="email" autocomplete="username" required></label><label>סיסמה<input type="password" name="password" autocomplete="current-password" required></label><button class="btn">כניסה</button></form>`;
 }
 
+// מרווח הטיפול של רכב: ערך מיוחד לרכב אם נקבע, אחרת הכלל הכללי
+const ivOf=v=>({km:v.service_interval_km||D.settings.service_interval_km,months:v.service_interval_months||D.settings.service_interval_months,own:!!(v.service_interval_km||v.service_interval_months)});
 function svcStatus(v){
  const last=D.services.filter(s=>s.vehicle_id===v.id&&s.type==='periodic').sort((a,b)=>b.km-a.km)[0];
  if(!last)return{lvl:1,txt:'אין טיפול תקופתי רשום'};
- const left=last.km+D.settings.service_interval_km-v.km;
- const due=new Date(last.service_date);due.setMonth(due.getMonth()+D.settings.service_interval_months);
+ const iv=ivOf(v);
+ const left=last.km+iv.km-v.km;
+ const due=new Date(last.service_date);due.setMonth(due.getMonth()+iv.months);
  const days=Math.round((due-Date.now())/DAY);
  if(left<=0)return{lvl:2,txt:`טיפול באיחור של ${fmt(-left)} ק"מ`};
  if(days<=0)return{lvl:2,txt:`טיפול באיחור של ${-days} ימים`};
@@ -320,6 +323,26 @@ function viewDash(){
  ${instLine()}<h2>דורש תשומת לב</h2>${at.length?`<div class="card list">${rows}</div>`:'<div class="card">הכול תקין, אין התראות פתוחות</div>'}
  <h2>הצי <small>(לחיצה על רכב פותחת את כל הפרטים עליו)</small></h2>${cards?`<div class="fleet">${cards}</div>`:'<div class="card">עוד לא נוספו רכבים</div>'}`;
 }
+function ivBox(v){
+ const g=D.settings,iv=ivOf(v);
+ const sum=`מרווח טיפול: כל ${fmt(iv.km)} ק"מ או ${iv.months} חודשים${iv.own?' (מיוחד לרכב)':' (הכלל הכללי)'}`;
+ if(!('service_interval_km' in v))return `<details><summary>${sum}</summary><p class="note" style="padding-bottom:12px">כדי לקבוע מרווח שונה לכל רכב צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "מרווח טיפול לכל רכב".</p></details>`;
+ return `<details><summary>${sum}</summary><form class="form" data-f="vint" style="padding-bottom:12px"><input type="hidden" name="vid" value="${v.id}">
+ <p class="note">הטיפול הבא מחושב לפי המרווח הזה. שדה ריק משתמש בכלל הכללי (כל ${fmt(g.service_interval_km)} ק"מ או ${g.service_interval_months} חודשים, ניתן לשינוי בלשונית ניהול).</p>
+ <label>כל כמה ק"מ<input type="number" name="km" min="1000" step="1" value="${v.service_interval_km||''}" placeholder="${g.service_interval_km}"></label>
+ <label>או כל כמה חודשים<input type="number" name="months" min="1" step="1" value="${v.service_interval_months||''}" placeholder="${g.service_interval_months}"></label>
+ <button class="btn">שמירת מרווח</button></form></details>`;
+}
+function vedBox(v){
+ return `<details><summary>עריכת פרטי הרכב</summary><form class="form" data-f="vedit" style="padding-bottom:12px"><input type="hidden" name="vid" value="${v.id}">
+ <label>מספר רישוי<input name="plate" value="${esc(v.plate)}" required></label>
+ <label>דגם<input name="model" value="${esc(v.model)}" required></label>
+ <label>שנה<input type="number" name="year" min="1950" max="2035" value="${v.year||''}"></label>
+ <label>תוקף טסט<input type="date" name="test" value="${esc(v.test_date||'')}"></label>
+ <label>תוקף ביטוח<input type="date" name="ins" value="${esc(v.insurance_date||'')}"></label>
+ <p class="note">כדי להסיר תאריך מוחקים אותו ושומרים. מספר רישוי חדש יופיע גם בחשבוניות הבאות שיישלחו להנהלת החשבונות.</p>
+ <button class="btn">שמירת פרטי הרכב</button></form></details>`;
+}
 function viewVeh(v){
  const s=svcStatus(v),dc=docs(v),age=kmAge(v),p=D.profiles.find(x=>x.id===v.driver_id)||null;
  const digits=String(v.km).padStart(6,'0').split('').map(c=>`<i>${c}</i>`).join('');
@@ -333,6 +356,8 @@ function viewVeh(v){
  <div class="tags"><span class="b ${cls(s.lvl)}">${s.txt}</span>${dc.map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}${stale?`<span class="b warn">ק"מ לא עודכן ${age} ימים</span>`:''}</div></div>
  <div class="card list"><div class="row"><span>נהג</span><select data-assign="${v.id}" aria-label="נהג">${opts}</select></div>${p&&(p.phone||w)?`<div class="row"><span><small>${esc(p.phone||'')}</small></span><span class="tags">${p.phone?`<a class="btn ghost sm" href="tel:${esc(p.phone)}">התקשרות</a>`:''}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת לק"מ</a>`:''}</span></div>`:''}</div>
  <div class="stats"><div class="card"><small>עלות טיפולים השנה</small><b>₪${fmt(sum(svs.filter(x=>new Date(x.service_date).getFullYear()===yr)))}</b></div><div class="card"><small>עלות כוללת</small><b>₪${fmt(sum(svs))}</b></div></div>
+ ${ivBox(v)}
+ ${vedBox(v)}
  ${svcForm(v.id)}<h2>היסטוריית טיפולים</h2>${svcList(svs,false)}
  ${licBox(v)}
  <details><summary>תיקון קילומטראז'</summary><form class="form" data-f="kmfix" style="padding-bottom:12px"><input type="hidden" name="vid" value="${v.id}"><label>ק"מ חדש<input type="number" name="km" min="0" value="${v.km}" required></label><button class="btn">עדכון ק"מ</button></form></details>`;
@@ -405,6 +430,9 @@ create policy app_installs_update on public.app_installs for update to authentic
  const sqlC=`alter table public.vehicles
   add column if not exists license_path text,
   add column if not exists license_at timestamptz;`;
+ const sqlV=`alter table public.vehicles
+  add column if not exists service_interval_km int check (service_interval_km > 0),
+  add column if not exists service_interval_months int check (service_interval_months > 0);`;
  const sqlD=`drop policy if exists lic_mgr_insert on storage.objects;
 drop policy if exists lic_mgr_select on storage.objects;
 drop policy if exists lic_mgr_delete on storage.objects;
@@ -914,7 +942,7 @@ Deno.serve(async (req) => {
  <div class="tags" style="margin-bottom:12px">${L(site,'פתיחת האתר')}</div></details>
  <details><summary>דף לכל רכב</summary><ol>
  <li>בסקירה לוחצים על רכב ברשימת הצי, או על שמו בקטע "דורש תשומת לב". נפתח דף עם כל מה שקשור לרכב.</li>
- <li>בדף: הק"מ והסטטוס, הנהג (אפשר להחליף), התקשרות ושליחת תזכורת, עלות הטיפולים, רישום טיפול חדש, היסטוריית הטיפולים והחשבוניות (ליד כל טיפול יש כפתור "עריכה" לתיקון סוג, תאריך, ק"מ, עלות ומוסך, בלי לשלוח מייל נוסף), רישיון הרכב ותיקון ק"מ.</li>
+ <li>בדף: הק"מ והסטטוס, הנהג (אפשר להחליף), התקשרות ושליחת תזכורת, עלות הטיפולים, מרווח הטיפול של הרכב, עריכת פרטי הרכב (מספר רישוי, דגם, שנה, תוקף טסט וביטוח), רישום טיפול חדש, היסטוריית הטיפולים והחשבוניות (ליד כל טיפול יש כפתור "עריכה" לתיקון סוג, תאריך, ק"מ, עלות ומוסך, בלי לשלוח מייל נוסף), רישיון הרכב ותיקון ק"מ.</li>
  <li>חזרה לסקירה: לוחצים "חזרה לסקירה" או על כפתור החזרה של הטלפון.</li></ol></details>
  <details><summary>הוספת נהג חדש</summary><ol>
  <li>ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. ${L(sb0+'/auth/users','פתיחה')}</li>
@@ -978,6 +1006,12 @@ Deno.serve(async (req) => {
  <li>שלב 6: באתר, ניהול ← "חשבוניות להנהלת החשבונות": כותבים את המייל של הנהלת החשבונות ולוחצים שמירה. אחר כך לוחצים "שליחת מייל בדיקה". המייל נשלח אליך (לכתובת שאיתה אתה מתחבר לאתר), לא להנהלת החשבונות. הוא אמור להגיע תוך דקה, ואם לא, בודקים בספאם. ${go('mng','sec-mail','מעבר לחשבוניות להנהלת החשבונות')}</li>
  <li>לכבות את השליחה: מוחקים את הכתובת ולוחצים שמירה.</li>
  <li>אם מייל של חשבונית אמיתית לא הגיע: ב-SQL Editor מריצים את השאילתה הבאה ומסתכלים בשורה האחרונה. 401: המתג Verify JWT דלוק. 400 עם bad mode: שלב 5 לא בוצע. 502 עם MAIL_SCRIPT_URL: שלב 4 לא בוצע. 502 עם script bad reply: בפריסה לא נבחר Anyone, או שלא אושרו הרשאות. אחרי שינוי בקוד של הסקריפט צריך לפרוס מחדש: Deploy ← Manage deployments ← סמל העיפרון ← בשורה Version בוחרים New version ← Deploy. ${sqlL}${pre(sqlR3)}</li></ol></details>
+ <details><summary>מרווח טיפול לכל רכב</summary><ol>
+ <li>למה: הכלל הכללי לכל הצי נקבע בניהול ← "כללי תזכורת לטיפול תקופתי". רכב שצריך מרווח אחר (למשל טיפול כל 15,000 ק"מ כשהכלל הכללי הוא 30,000) מקבל מרווח משלו.</li>
+ <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlV)}</li>
+ <li>אחרי זה: בסקירה לוחצים על הרכב. מתחת לעלות הטיפולים יש שורה "מרווח טיפול: כל ... ק"מ או ... חודשים". לוחצים עליה, ממלאים כל כמה ק"מ ו/או כל כמה חודשים, ולוחצים "שמירת מרווח".</li>
+ <li>שדה ריק משתמש בכלל הכללי. אם מוחקים את שני השדות ושומרים, הרכב חוזר לכלל הכללי.</li>
+ <li>המרווח קובע את "טיפול בעוד ... ק"מ" של הרכב ואת ההתראות בסקירה.</li></ol></details>
  <details><summary>רישיון רכב</summary><ol>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlC)}</li>
  <li>אחרי זה: ניהול ← רישיון רכב. ליד כל רכב לוחצים "העלאה", ומצלמים את הרישיון או בוחרים תמונה מהגלריה. ${go('mng','sec-lic','מעבר לרישיון רכב')}</li>
@@ -1113,6 +1147,27 @@ const H={
   if(!data||!data.length)return[0,'השינוי לא נשמר. ייתכן שחסרה הרשאת עריכה במסד הנתונים'];
   $('#ed').classList.remove('on');
   return[1,'הטיפול עודכן']
+ },
+ async vedit(o){
+  if(!me||me.role!=='manager')return[0,'רק מנהל יכול לערוך פרטי רכב'];
+  const plate=(o.plate||'').trim(),model=(o.model||'').trim();
+  if(!plate||!model)return[0,'צריך למלא מספר רישוי ודגם'];
+  const year=num(o.year);
+  if(year!=null&&(!Number.isInteger(year)||year<1950||year>2035))return[0,'השנה לא תקינה'];
+  const{data,error}=await sb.from('vehicles').update({plate,model,year,test_date:o.test||null,insurance_date:o.ins||null}).eq('id',o.vid).select('id');
+  if(error)return res(error,'');
+  if(!data||!data.length)return[0,'השינוי לא נשמר. ייתכן שחסרה הרשאה במסד הנתונים'];
+  return[1,'פרטי הרכב עודכנו']
+ },
+ async vint(o){
+  if(!me||me.role!=='manager')return[0,'רק מנהל יכול לשנות מרווח טיפול'];
+  const km=num(o.km),mo=num(o.months);
+  if(km!=null&&(!Number.isInteger(km)||km<1000))return[0,'מספר הק"מ צריך להיות 1,000 או יותר'];
+  if(mo!=null&&(!Number.isInteger(mo)||mo<1))return[0,'מספר החודשים צריך להיות 1 או יותר'];
+  const{data,error}=await sb.from('vehicles').update({service_interval_km:km,service_interval_months:mo}).eq('id',o.vid).select('id');
+  if(error){console.error(error);return[0,(error.message||'').includes('service_interval')?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "מרווח טיפול לכל רכב"':'השמירה נכשלה, נסה שוב']}
+  if(!data||!data.length)return[0,'השינוי לא נשמר. ייתכן שחסרה הרשאה במסד הנתונים'];
+  return[1,km==null&&mo==null?'הרכב חוזר להשתמש בכלל הכללי':'מרווח הטיפול של הרכב עודכן']
  },
  async veh(o){const{error}=await sb.from('vehicles').insert({plate:o.plate.trim(),model:o.model.trim(),year:num(o.year),driver_id:o.driverId||null,km:+o.km,test_date:o.test||null,insurance_date:o.ins||null});return res(error,'הרכב נוסף')},
  async kmfix(o){
