@@ -65,6 +65,7 @@ a.btn{text-decoration:none;display:inline-block}
 .vcard b{font-size:16px}.vcard .tags{margin-top:4px}.vkm{font-weight:500}
 .rowlink{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:start;cursor:pointer;display:grid;gap:2px}
 .instline{display:block;width:100%;margin-bottom:12px}
+.subtabs{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto}.subtabs .tab{padding:5px 18px;font-size:14px}
 #ov{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;padding:16px;z-index:9}
 #ov.on{display:flex}#ov img{max-width:100%;max-height:100%;border-radius:6px}
 #ed{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;overflow-y:auto;padding:16px;z-index:9}
@@ -328,7 +329,7 @@ function ivBox(v){
  const sum=`מרווח טיפול: כל ${fmt(iv.km)} ק"מ או ${iv.months} חודשים${iv.own?' (מיוחד לרכב)':' (הכלל הכללי)'}`;
  if(!('service_interval_km' in v))return `<details><summary>${sum}</summary><p class="note" style="padding-bottom:12px">כדי לקבוע מרווח שונה לכל רכב צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "מרווח טיפול לכל רכב".</p></details>`;
  return `<details><summary>${sum}</summary><form class="form" data-f="vint" style="padding-bottom:12px"><input type="hidden" name="vid" value="${v.id}">
- <p class="note">הטיפול הבא מחושב לפי המרווח הזה. שדה ריק משתמש בכלל הכללי (כל ${fmt(g.service_interval_km)} ק"מ או ${g.service_interval_months} חודשים, ניתן לשינוי בלשונית ניהול).</p>
+ <p class="note">הטיפול הבא מחושב לפי המרווח הזה. שדה ריק משתמש בכלל הכללי (כל ${fmt(g.service_interval_km)} ק"מ או ${g.service_interval_months} חודשים, ניתן לשינוי ב-ניהול ← הגדרות).</p>
  <label>כל כמה ק"מ<input type="number" name="km" min="1000" step="1" value="${v.service_interval_km||''}" placeholder="${g.service_interval_km}"></label>
  <label>או כל כמה חודשים<input type="number" name="months" min="1" step="1" value="${v.service_interval_months||''}" placeholder="${g.service_interval_months}"></label>
  <button class="btn">שמירת מרווח</button></form></details>`;
@@ -370,17 +371,21 @@ function licBox(one){
  const vs=one?[one]:D.vehicles;
  return `<h2 id="sec-lic">רישיון רכב</h2><div class="card list">${vs.map(licRow).join('')||'<small>עוד אין רכבים</small>'}</div>`;
 }
+const SUBS=[['veh','רכבים'],['drv','נהגים'],['set','הגדרות']];
+const SUBOF={'sec-veh':'veh','sec-assign':'veh','sec-lic':'veh','sec-kmfix':'veh','sec-drivers':'drv','sec-inst':'drv','sec-push':'drv','sec-rules':'set','sec-mail':'set'};
 function viewManage(){
  const drivers=D.profiles.filter(p=>p.role==='driver');
  const opts=sel=>`<option value="">ללא</option>`+drivers.map(p=>`<option value="${p.id}"${p.id===sel?' selected':''}>${esc(p.full_name)}</option>`).join('');
- return `<form id="sec-rules" class="card form" data-f="rules"><h3>כללי תזכורת לטיפול תקופתי</h3><label>כל כמה ק"מ<input type="number" name="km" value="${D.settings.service_interval_km}" min="1000" required></label><label>או כל כמה חודשים<input type="number" name="months" value="${D.settings.service_interval_months}" min="1" required></label><button class="btn">עדכון כללים</button></form>
- <form id="sec-veh" class="card form" data-f="veh"><h3>הוספת רכב</h3><label>מספר רישוי<input name="plate" required></label><label>דגם<input name="model" required></label><label>שנה<input type="number" name="year" min="1990" max="2035"></label>
+ const sub=SUBS.some(x=>x[0]===ui.sub)?ui.sub:'veh';
+ const bar=`<div class="subtabs">${SUBS.map(([k,t])=>`<button type="button" class="tab ${sub===k?'on':''}" data-a="sub" data-v="${k}">${t}</button>`).join('')}</div>`;
+ if(sub==='drv')return bar+`<h2 id="sec-drivers" style="margin-top:0">נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>${installBox()}${pushBox()}`;
+ if(sub==='set')return bar+`<form id="sec-rules" class="card form" data-f="rules"><h3>כללי תזכורת לטיפול תקופתי</h3><label>כל כמה ק"מ<input type="number" name="km" value="${D.settings.service_interval_km}" min="1000" required></label><label>או כל כמה חודשים<input type="number" name="months" value="${D.settings.service_interval_months}" min="1" required></label><small>זה המרווח לכל הרכבים. לרכב שצריך מרווח אחר: בסקירה לוחצים על הרכב ובשורה "מרווח טיפול" קובעים לו מרווח משלו.</small><button class="btn">עדכון כללים</button></form>${mailBox()}`;
+ return bar+`<details id="sec-veh"><summary>הוספת רכב חדש</summary><form class="form" data-f="veh" style="padding-bottom:12px"><label>מספר רישוי<input name="plate" required></label><label>דגם<input name="model" required></label><label>שנה<input type="number" name="year" min="1990" max="2035"></label>
  <label>נהג<select name="driverId">${opts('')}</select></label>
- <label>ק"מ נוכחי<input type="number" name="km" min="0" required></label><label>תוקף טסט<input type="date" name="test"></label><label>תוקף ביטוח<input type="date" name="ins"></label><button class="btn">הוספת רכב</button></form>
- <form id="sec-kmfix" class="card form" data-f="kmfix"><h3>עריכת ק"מ לרכב</h3><label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)} · ${fmt(v.km)} ק"מ</option>`).join('')}</select></label><label>ק"מ חדש<input type="number" name="km" min="0" required></label><button class="btn">עדכון ק"מ</button></form>
+ <label>ק"מ נוכחי<input type="number" name="km" min="0" required></label><label>תוקף טסט<input type="date" name="test"></label><label>תוקף ביטוח<input type="date" name="ins"></label><button class="btn">הוספת רכב</button></form></details>
  <h2 id="sec-assign">שיוך נהגים לרכבים</h2><div class="card list">${D.vehicles.map(v=>`<div class="row"><span>${vname(v)}</span><select data-assign="${v.id}">${opts(v.driver_id)}</select></div>`).join('')||'עוד אין רכבים'}</div>
  ${licBox()}
- <h2 id="sec-drivers">נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>${installBox()}${pushBox()}${mailBox()}`;
+ <details id="sec-kmfix" style="margin-top:12px"><summary>עריכת ק"מ לרכב</summary><form class="form" data-f="kmfix" style="padding-bottom:12px"><label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)} · ${fmt(v.km)} ק"מ</option>`).join('')}</select></label><label>ק"מ חדש<input type="number" name="km" min="0" required></label><button class="btn">עדכון ק"מ</button></form></details>`;
 }
 function viewDriver(){
  const v=D.vehicles[0];
@@ -547,9 +552,10 @@ drop trigger if exists services_mail_invoice on public.services;
 create trigger services_mail_invoice after insert on public.services
   for each row execute function public.mail_invoice();`;
  const sqlR3=`select status_code, content::text from net._http_response order by id desc limit 3;`;
- const kmFnCode=String.raw`// km-reminders: (1) התראות לטלפון על עדכון ק"מ (Web Push), (2) שליחת חשבוניות להנהלת החשבונות במייל.
+ const kmFnCode=String.raw`// km-reminders: (1) התראות לטלפון על עדכון ק"מ (Web Push), (2) שליחת חשבוניות להנהלת החשבונות במייל,
+// (3) קריאה אוטומטית של תמונת חשבונית באמצעות Claude (תאריך, סכום, מוסך, ק"מ).
 // התראות לא צריכות מפתחות חיצוניים. שליחת מייל עוברת דרך סקריפט קטן ב-Gmail שלך (Google Apps Script),
-// וכתובת הסקריפט נשמרת בסוד MAIL_SCRIPT_URL.
+// וכתובת הסקריפט נשמרת בסוד MAIL_SCRIPT_URL. הקריאה האוטומטית צריכה סוד בשם ANTHROPIC_API_KEY.
 // חשוב: אחרי הפריסה לכבות את Verify JWT של הפונקציה (הפונקציה בודקת הרשאות בעצמה).
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
@@ -711,6 +717,76 @@ async function sendInvoice(admin: Admin, serviceId: string) {
   return reply(out, out.ok ? 200 : 502)
 }
 
+// ---------- קריאה אוטומטית של חשבונית (Claude) ----------
+const INVOICE_PROMPT = [
+  'This is a photo of a receipt or invoice for a vehicle service, repair, tires or parts from an Israeli business.',
+  'It is mostly in Hebrew, may be handwritten, and may show several papers (for example an invoice and a credit card slip).',
+  'Dates in Israel are day/month/year.',
+  'Answer with ONLY one JSON object and nothing else:',
+  '{"readable": true or false, "date": "YYYY-MM-DD" or null, "cost": number or null, "km": number or null, "garage": string or null, "plate": string or null, "summary": string or null}',
+  'cost = the final total actually paid, in NIS, including VAT (for example the total to pay, or the amount on the card slip), as a plain number.',
+  'km = the vehicle odometer reading, only if it is clearly written, otherwise null.',
+  'garage = the business name.',
+  'plate = the vehicle license plate digits only, only if a vehicle number is written, otherwise null.',
+  'summary = what was done, in Hebrew, at most 60 characters, or null.',
+  'Never guess. Use null for anything that is missing or unclear.',
+  'If the image is not a receipt or an invoice, answer {"readable": false}.',
+].join(' ')
+
+async function readInvoice(admin: Admin, userId: string, image: unknown) {
+  // רק מנהל, או נהג שמשויך אליו רכב, יכול להשתמש בשירות (כל קריאה עולה כסף קטן)
+  const { data: me } = await admin.from('profiles').select('role').eq('id', userId).maybeSingle()
+  if (me?.role !== 'manager') {
+    const { data: own } = await admin.from('vehicles').select('id').eq('driver_id', userId).limit(1)
+    if (!own || own.length === 0) return reply({ ok: false, error: 'forbidden' }, 403)
+  }
+  if (typeof image !== 'string' || image.length < 100 || image.length > 7000000) {
+    return reply({ ok: false, error: 'bad image' }, 400)
+  }
+  const key = Deno.env.get('ANTHROPIC_API_KEY')
+  if (!key) return reply({ ok: false, error: 'missing ANTHROPIC_API_KEY' }, 500)
+  const ws = Deno.env.get('ANTHROPIC_WORKSPACE_ID')
+  let r: Response
+  try {
+    r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        ...(ws ? { 'anthropic-workspace-id': ws } : {}),
+      },
+      body: JSON.stringify({
+        model: Deno.env.get('INVOICE_MODEL') ?? 'claude-sonnet-5-5',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
+            { type: 'text', text: INVOICE_PROMPT },
+          ],
+        }],
+      }),
+    })
+  } catch (e) {
+    return reply({ ok: false, error: 'ai unreachable: ' + String(e).slice(0, 120) }, 502)
+  }
+  if (!r.ok) {
+    console.error('anthropic', r.status, (await r.text()).slice(0, 300).split(key).join('[key]'))
+    return reply({ ok: false, error: 'ai ' + r.status }, 502)
+  }
+  const out = await r.json()
+  const text = (out.content ?? []).map((c: { text?: string }) => c.text ?? '').join('')
+  const a = text.indexOf('{')
+  const b = text.lastIndexOf('}')
+  if (a < 0 || b < a) return reply({ ok: false, error: 'no json' }, 502)
+  try {
+    return reply({ ok: true, data: JSON.parse(text.slice(a, b + 1)) })
+  } catch (_e) {
+    return reply({ ok: false, error: 'bad json' }, 502)
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
@@ -756,6 +832,10 @@ Deno.serve(async (req) => {
         'זו הודעת בדיקה מאתר צי הרכב. השליחה עובדת. חשבוניות חדשות יישלחו להנהלת החשבונות כקובץ מצורף.',
       )
       return reply({ ...out, to: userEmail })
+    }
+    if (mode === 'read') {
+      if (!userId) return reply({ ok: false, error: 'forbidden' }, 403)
+      return await readInvoice(admin, userId, body.image)
     }
     if (mode === 'cron' && userId) return reply({ ok: false, error: 'forbidden' }, 403)
 
@@ -837,99 +917,7 @@ function doPost(e) {
   }
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }`;
- const fnCode=String.raw`// read-invoice: קורא תמונה של חשבונית מוסך באמצעות Claude
-// ומחזיר תאריך, סכום, שם מוסך וק"מ. נדרש סוד בשם ANTHROPIC_API_KEY.
-import { createClient } from 'npm:@supabase/supabase-js@2'
-
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-const reply = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...cors, 'Content-Type': 'application/json' },
-  })
-
-const PROMPT = [
-  'This is a photo of a receipt or invoice for a vehicle service, repair, tires or parts from an Israeli business.',
-  'It is mostly in Hebrew, may be handwritten, and may show several papers (for example an invoice and a credit card slip).',
-  'Dates in Israel are day/month/year.',
-  'Answer with ONLY one JSON object and nothing else:',
-  '{"readable": true or false, "date": "YYYY-MM-DD" or null, "cost": number or null, "km": number or null, "garage": string or null, "plate": string or null, "summary": string or null}',
-  'cost = the final total actually paid, in NIS, including VAT (for example the total to pay, or the amount on the card slip), as a plain number.',
-  'km = the vehicle odometer reading, only if it is clearly written, otherwise null.',
-  'garage = the business name.',
-  'plate = the vehicle license plate digits only, only if a vehicle number is written, otherwise null.',
-  'summary = what was done, in Hebrew, at most 60 characters, or null.',
-  'Never guess. Use null for anything that is missing or unclear.',
-  'If the image is not a receipt or an invoice, answer {"readable": false}.',
-].join(' ')
-
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
-  try {
-    // 1. רק משתמש מחובר שיש לו רכב (או מנהל) יכול להשתמש בשירות
-    const token = (req.headers.get('Authorization') ?? '').replace('Bearer ', '')
-    const pub = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') ?? '{}')
-    const anon = Deno.env.get('SUPABASE_ANON_KEY') ?? (Object.values(pub)[0] as string)
-    const url = Deno.env.get('SUPABASE_URL')!
-    const noSession = { persistSession: false, autoRefreshToken: false }
-    const { data: u, error: ue } = await createClient(url, anon, { auth: noSession }).auth.getUser(token)
-    if (ue || !u.user) return reply({ ok: false, error: 'unauthorized' }, 401)
-    const db = createClient(url, anon, {
-      auth: noSession,
-      global: { headers: { Authorization: 'Bearer ' + token } },
-    })
-    const { data: veh } = await db.from('vehicles').select('id').limit(1)
-    if (!veh || veh.length === 0) return reply({ ok: false, error: 'forbidden' }, 403)
-
-    // 2. התמונה
-    const { image } = await req.json()
-    if (typeof image !== 'string' || image.length < 100 || image.length > 7000000) {
-      return reply({ ok: false, error: 'bad image' }, 400)
-    }
-    const key = Deno.env.get('ANTHROPIC_API_KEY')
-    if (!key) return reply({ ok: false, error: 'missing ANTHROPIC_API_KEY' }, 500)
-
-    // 3. קריאה ל-Claude
-    const ws = Deno.env.get('ANTHROPIC_WORKSPACE_ID')
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-        ...(ws ? { 'anthropic-workspace-id': ws } : {}),
-      },
-      body: JSON.stringify({
-        model: Deno.env.get('INVOICE_MODEL') ?? 'claude-sonnet-5-5',
-        max_tokens: 500,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
-            { type: 'text', text: PROMPT },
-          ],
-        }],
-      }),
-    })
-    if (!r.ok) {
-      console.error('anthropic', r.status, (await r.text()).slice(0, 300))
-      return reply({ ok: false, error: 'ai ' + r.status }, 502)
-    }
-    const out = await r.json()
-    const text = (out.content ?? []).map((c: { text?: string }) => c.text ?? '').join('')
-    const a = text.indexOf('{')
-    const b = text.lastIndexOf('}')
-    if (a < 0 || b < a) return reply({ ok: false, error: 'no json' }, 502)
-    return reply({ ok: true, data: JSON.parse(text.slice(a, b + 1)) })
-  } catch (e) {
-    console.error(e)
-    return reply({ ok: false, error: String(e) }, 500)
-  }
-})`;
- const pre=t=>`<pre>${esc(t)}</pre><button class="btn ghost sm" data-a="copy">העתקה</button>`;
+  const pre=t=>`<pre>${esc(t)}</pre><button class="btn ghost sm" data-a="copy">העתקה</button>`;
  const L=(h,t)=>`<a class="btn ghost sm" href="${h}" target="_blank" rel="noopener">${t}</a>`;
  const go=(v,to,t)=>`<button type="button" class="btn ghost sm" data-a="tab" data-v="${v}"${to?` data-to="${to}"`:''}>${t}</button>`;
  const gh='https://github.com/kfirfleet/fleet',site='https://kfirfleet.github.io/fleet/',sqlL=L(sb0+'/sql/new','פתיחת SQL Editor');
@@ -948,8 +936,8 @@ Deno.serve(async (req) => {
  <li>ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. ${L(sb0+'/auth/users','פתיחה')}</li>
  <li>באתר: ניהול ← נהגים. ${go('mng','sec-drivers','מעבר לנהגים')} אם הנהג לא מופיע, מריצים ב-SQL Editor את הקוד הבא ומרעננים. ${sqlL}${pre(sql1)}</li>
  <li>נותנים שם וטלפון ולוחצים שמירה.</li>
- <li>משייכים לרכב: ניהול ← שיוך נהגים לרכבים. ${go('mng','sec-assign','מעבר לשיוך')}</li>
- <li>שולחים לנהג את האימייל והסיסמה הזמנית. אחר כך ב-ניהול, בקטע "התקנת האפליקציה", לוחצים "שלח הוראות" ליד שמו, ונשלחת לו הודעה עם הקישור והסבר להתקנה. ${go('mng','sec-inst','מעבר להתקנת האפליקציה')}</li></ol></details>
+ <li>משייכים לרכב: ניהול ← רכבים ← שיוך נהגים לרכבים. ${go('mng','sec-assign','מעבר לשיוך')}</li>
+ <li>שולחים לנהג את האימייל והסיסמה הזמנית. אחר כך ב-ניהול ← נהגים, בקטע "התקנת האפליקציה", לוחצים "שלח הוראות" ליד שמו, ונשלחת לו הודעה עם הקישור והסבר להתקנה. ${go('mng','sec-inst','מעבר להתקנת האפליקציה')}</li></ol></details>
  <details><summary>עדכון האתר (גרסה חדשה)</summary><ol>
  <li>מוחקים מהטלפון קבצי index ישנים מתיקיית ההורדות, ואז מורידים את קובץ index.html החדש מהשיחה עם Claude. אם נשלח גם sw.js, מורידים גם אותו ומעלים את שניהם יחד.</li>
  <li>פותחים את דף ההעלאה ב-GitHub ובוחרים את הקובץ (אחרונים). ${L(gh+'/upload/main','דף ההעלאה')}</li>
@@ -957,7 +945,7 @@ Deno.serve(async (req) => {
  <li>מחכים דקה-שתיים. אפשר לבדוק שההעלאה הסתיימה (סימן וי ירוק). ${L(gh+'/actions','בדיקה שההעלאה עברה')} אחר כך סוגרים את האפליקציה לגמרי ופותחים מחדש. לבדיקה בלי זיכרון ישן: לשונית גלישה בסתר.</li>
  <li>תמיד פותחים את האתר מהכתובת kfirfleet.github.io/fleet ולא מקובץ בטלפון. ${L(site,'פתיחת האתר')}</li></ol></details>
  <details><summary>תיקון ק"מ</summary><ol>
- <li>ק"מ של רכב: ניהול ← עריכת ק"מ לרכב. ${go('mng','sec-kmfix','מעבר לעריכת ק"מ')}</li>
+ <li>ק"מ של רכב: ניהול ← רכבים ← עריכת ק"מ לרכב. ${go('mng','sec-kmfix','מעבר לעריכת ק"מ')}</li>
  <li>ק"מ שגוי בטיפול שנרשם: ב-SQL Editor מחליפים במספרים ובמספר הרישוי ומריצים. אם מופיע No rows returned, השורה שייכת לרכב אחר. ${sqlL}${pre(sql3)}</li></ol></details>
  <details><summary>איפוס סיסמה למשתמש</summary><ol>
  <li>ב-SQL Editor מחליפים את NEW_PASSWORD ואת האימייל (באותיות קטנות, גרשיים נשארים) ומריצים. את הסיסמה לא שומרים בשאילתה. ${sqlL}${pre(sql2)}</li>
@@ -967,7 +955,7 @@ Deno.serve(async (req) => {
  <li>כפתור "שלח תזכורת" פותח וואטסאפ מוכן. לשם כך צריך מספר טלפון לנהג ב-ניהול ← נהגים. ${go('mng','sec-drivers','מעבר לנהגים')}</li></ol></details>
  <details><summary>מי התקין את האפליקציה</summary><ol>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את שני הקטעים הבאים, אחד אחרי השני. הקוד בטוח להרצה חוזרת, אז אם הדבקה נחתכה אפשר פשוט להריץ שוב. ${sqlL}${pre(sqlA)}${pre(sqlB)}</li>
- <li>אחרי זה, ב-ניהול, בקטע "התקנת האפליקציה", מופיע מצב של כל נהג. בסקירה מופיעה שורה קטנה כל עוד לא כולם התקינו. ${go('mng','sec-inst','מעבר להתקנת האפליקציה')}</li>
+ <li>אחרי זה, ב-ניהול ← נהגים, בקטע "התקנת האפליקציה", מופיע מצב של כל נהג. בסקירה מופיעה שורה קטנה כל עוד לא כולם התקינו. ${go('mng','sec-inst','מעבר להתקנת האפליקציה')}</li>
  <li>"מותקן": הנהג פתח את האפליקציה מהאייקון. "נכנס מהדפדפן": נכנס לאתר אבל עוד לא התקין. "לא נראה עדיין": לא נכנס לאתר מאז העדכון.</li>
  <li>לנהג שעוד לא התקין יש כפתור "שלח הוראות" שפותח וואטסאפ מוכן.</li>
  <li>לנהגים מופיע בראש האפליקציה כרטיס "התקינו את האפליקציה בטלפון". בכרום באנדרואיד יש בו כפתור "התקנה" שמתקין בלחיצה אחת. אי אפשר להסתיר אותו: הוא נעלם רק כשהנהג פותח את האפליקציה מהאייקון.</li>
@@ -979,9 +967,9 @@ Deno.serve(async (req) => {
  <li>שלב 3: ב-Supabase: Edge Functions ← Deploy a new function ← Via Editor. מוחקים את הקוד שיש שם, מדביקים את הקוד הבא ולוחצים Deploy function. Supabase נותן לפונקציה שם אוטומטי שאי אפשר לשנות. האתר מוגדר לשם swift-handler. אם אצלך יצא שם אחר, שלח לי אותו ואעדכן. ${L(sb0+'/functions','פתיחת Edge Functions')}${pre(kmFnCode)}</li>
  <li>שלב 4, חשוב: נכנסים לפונקציה swift-handler, ללשונית Settings. ליד "Verify JWT with legacy secret" לוחצים על המתג הירוק כדי שיהפוך לאפור, ואז לוחצים Save changes. הפונקציה בודקת הרשאות בעצמה. בלי זה הטיימר החודשי נכשל עם שגיאה 401.</li>
  <li>שלב 5: ב-SQL Editor מריצים את הקטע הבא, שקובע שההתראה תישלח ב-1 בכל חודש. אם מופיעה שגיאה על pg_cron או pg_net, ב-Supabase נכנסים ל-Integrations, מפעילים Cron ו-Webhooks, ומריצים שוב. ${sqlL}${pre(sqlQ)}</li>
- <li>שלב 6: באתר, ניהול ← "התראות על עדכון ק"מ": לוחצים "הפעלה במכשיר הזה", מאשרים, ואז "בדיקה אצלי". אמורה להגיע התראה. ${go('mng','sec-push','מעבר להתראות')}</li>
+ <li>שלב 6: באתר, ניהול ← נהגים ← "התראות על עדכון ק"מ": לוחצים "הפעלה במכשיר הזה", מאשרים, ואז "בדיקה אצלי". אמורה להגיע התראה. ${go('mng','sec-push','מעבר להתראות')}</li>
  <li>כל נהג מפעיל אצלו: בכרטיס "התראות על עדכון ק"מ" בראש האפליקציה לוחצים "הפעלת התראות" ומאשרים. באייפון זה עובד רק אחרי שהאפליקציה מותקנת במסך הבית (iOS 16.4 ומעלה).</li>
- <li>לשלוח מיד לכל מי שלא עדכן: ניהול ← "שליחה עכשיו". ברשימה רואים מי בלי התראות פעילות. להם שולחים תזכורת בוואטסאפ מהסקירה.</li>
+ <li>לשלוח מיד לכל מי שלא עדכן: ניהול ← נהגים ← "שליחה עכשיו". ברשימה רואים מי בלי התראות פעילות. להם שולחים תזכורת בוואטסאפ מהסקירה.</li>
  <li>בדיקה של הטיימר עצמו (בלי לשלוח כלום): מריצים את הקטע הראשון, מחכים כמה שניות, ואז את השני. אמור להופיע status_code 200 ותוכן שמתחיל ב-{"ok":true. ${sqlL}${pre(sqlR1)}${pre(sqlR2)}</li>
  <li>אם מופיע 401: המתג Verify JWT עדיין דלוק (שלב 4). אם מופיע 500 עם rpc: לא הורץ שלב 2.</li></ol></details>
  <details><summary>קריאת חשבוניות אוטומטית</summary><ol>
@@ -990,9 +978,9 @@ Deno.serve(async (req) => {
  <li>הקריאה עולה כסף קטן (בדרך כלל אגורות בודדות לחשבונית) ועוברת דרך חשבון נפרד ב-Claude Console, לא דרך המנוי הרגיל של Claude. בלי ההגדרה הזו האתר ממשיך לעבוד, והנהג ממלא את הפרטים בעצמו.</li>
  <li>הגדרה חד-פעמית, שלב 1: נכנסים ל-Claude Console, מוסיפים קרדיט בהגדרות החיוב (Billing), ואז ב-API keys לוחצים Create key ומעתיקים את המפתח (מתחיל ב-sk-ant). הוא מוצג פעם אחת בלבד. ${L('https://platform.claude.com/settings/keys','מפתחות API')}</li>
  <li>שלב 2: שומרים את המפתח ב-Supabase: Edge Functions ← Secrets. בשם (Key) כותבים ANTHROPIC_API_KEY, בערך (Value) מדביקים את המפתח, ולוחצים Save. ${L(sb0+'/functions/secrets','פתיחת Secrets')}</li>
- <li>שלב 3: Edge Functions ← Deploy a new function ← Via Editor. נותנים לפונקציה את השם read-invoice, מוחקים את הקוד שיש שם, מדביקים את הקוד הבא ולוחצים Deploy function. ${L(sb0+'/functions','פתיחת Edge Functions')}${pre(fnCode)}</li>
+ <li>שלב 3: מעדכנים את הקוד של הפונקציה swift-handler (אותה פונקציה של ההתראות והמיילים, לא צריך ליצור פונקציה חדשה): Edge Functions ← swift-handler ← לשונית Code, מוחקים את כל הקוד ומדביקים במקומו את הקוד העדכני מהקטע "התראות על עדכון ק"מ" (שלב 3 שם), ואז Deploy updates. אחרי הפריסה בודקים שבלשונית Settings המתג Verify JWT with legacy secret כבוי. ${L(sb0+'/functions','פתיחת Edge Functions')}</li>
  <li>בדיקה: באתר ← טיפולים, בוחרים רכב וסוג טיפול ומצלמים חשבונית. אם הכול תקין, הטיפול נשמר לבד עם הסכום והתאריך מהחשבונית.</li>
- <li>אם זה לא עובד: ב-Supabase, בתוך Edge Functions ← read-invoice, בלשונית Logs רואים את השגיאה. "ai 401" או "ai 400" אומר שהמפתח שגוי או שנגמר הקרדיט.</li>
+ <li>אם זה לא עובד: ב-Supabase, בתוך Edge Functions ← swift-handler, בלשונית Logs רואים את השגיאה. "ai 401" או "ai 400" אומר שהמפתח שגוי או שנגמר הקרדיט. "missing ANTHROPIC_API_KEY" אומר ששלב 2 לא בוצע. אם הפונקציה לא עודכנה (שלב 3), האתר פשוט מבקש מהנהג למלא את הפרטים בעצמו.</li>
  <li>אם מתקבלת שגיאת 401 או Invalid JWT: בלשונית Settings של הפונקציה מכבים את המתג Verify JWT with legacy secret ולוחצים Save changes. הפונקציה בודקת בעצמה שהמשתמש מחובר.</li>
  <li>שגיאה בקריאה לא פוגעת בנתונים: הנהג רואה את השדות ומשלים אותם בעצמו.</li></ol></details>
  <details><summary>חשבוניות להנהלת החשבונות</summary><ol>
@@ -1003,18 +991,18 @@ Deno.serve(async (req) => {
  <li>שלב 3: פריסה. למעלה לוחצים Deploy ← New deployment. ליד Select type לוחצים על גלגל השיניים ובוחרים Web app. בשורה Execute as משאירים Me, ובשורה Who has access בוחרים Anyone. לוחצים Deploy ואז Authorize access ובוחרים את חשבון ה-Gmail. אם מופיע "Google hasn't verified this app", לוחצים Advanced ← Go to ... (unsafe) ← Allow. בסוף מעתיקים את ה-Web app URL (הוא נגמר ב-/exec). הכתובת הזו היא כמו סיסמה, לא משתפים אותה.</li>
  <li>שלב 4: שומרים את הכתובת ב-Supabase: Edge Functions ← Secrets. בשם (Key) כותבים MAIL_SCRIPT_URL, בערך (Value) מדביקים את הכתובת, ולוחצים Save. ${L(sb0+'/functions/secrets','פתיחת Secrets')}</li>
  <li>שלב 5: מעדכנים את הקוד של הפונקציה swift-handler: Edge Functions ← swift-handler ← לשונית Code, מוחקים את כל הקוד ומדביקים במקומו את הקוד העדכני מהקטע "התראות על עדכון ק"מ" (שלב 3 שם), ואז Deploy updates. אחרי העדכון כדאי לבדוק שבלשונית Settings המתג Verify JWT with legacy secret עדיין כבוי. ${L(sb0+'/functions','פתיחת Edge Functions')}</li>
- <li>שלב 6: באתר, ניהול ← "חשבוניות להנהלת החשבונות": כותבים את המייל של הנהלת החשבונות ולוחצים שמירה. אחר כך לוחצים "שליחת מייל בדיקה". המייל נשלח אליך (לכתובת שאיתה אתה מתחבר לאתר), לא להנהלת החשבונות. הוא אמור להגיע תוך דקה, ואם לא, בודקים בספאם. ${go('mng','sec-mail','מעבר לחשבוניות להנהלת החשבונות')}</li>
+ <li>שלב 6: באתר, ניהול ← הגדרות ← "חשבוניות להנהלת החשבונות": כותבים את המייל של הנהלת החשבונות ולוחצים שמירה. אחר כך לוחצים "שליחת מייל בדיקה". המייל נשלח אליך (לכתובת שאיתה אתה מתחבר לאתר), לא להנהלת החשבונות. הוא אמור להגיע תוך דקה, ואם לא, בודקים בספאם. ${go('mng','sec-mail','מעבר לחשבוניות להנהלת החשבונות')}</li>
  <li>לכבות את השליחה: מוחקים את הכתובת ולוחצים שמירה.</li>
  <li>אם מייל של חשבונית אמיתית לא הגיע: ב-SQL Editor מריצים את השאילתה הבאה ומסתכלים בשורה האחרונה. 401: המתג Verify JWT דלוק. 400 עם bad mode: שלב 5 לא בוצע. 502 עם MAIL_SCRIPT_URL: שלב 4 לא בוצע. 502 עם script bad reply: בפריסה לא נבחר Anyone, או שלא אושרו הרשאות. אחרי שינוי בקוד של הסקריפט צריך לפרוס מחדש: Deploy ← Manage deployments ← סמל העיפרון ← בשורה Version בוחרים New version ← Deploy. ${sqlL}${pre(sqlR3)}</li></ol></details>
  <details><summary>מרווח טיפול לכל רכב</summary><ol>
- <li>למה: הכלל הכללי לכל הצי נקבע בניהול ← "כללי תזכורת לטיפול תקופתי". רכב שצריך מרווח אחר (למשל טיפול כל 15,000 ק"מ כשהכלל הכללי הוא 30,000) מקבל מרווח משלו.</li>
+ <li>למה: הכלל הכללי לכל הצי נקבע ב-ניהול ← הגדרות ← "כללי תזכורת לטיפול תקופתי". רכב שצריך מרווח אחר (למשל טיפול כל 15,000 ק"מ כשהכלל הכללי הוא 30,000) מקבל מרווח משלו.</li>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlV)}</li>
  <li>אחרי זה: בסקירה לוחצים על הרכב. מתחת לעלות הטיפולים יש שורה "מרווח טיפול: כל ... ק"מ או ... חודשים". לוחצים עליה, ממלאים כל כמה ק"מ ו/או כל כמה חודשים, ולוחצים "שמירת מרווח".</li>
  <li>שדה ריק משתמש בכלל הכללי. אם מוחקים את שני השדות ושומרים, הרכב חוזר לכלל הכללי.</li>
  <li>המרווח קובע את "טיפול בעוד ... ק"מ" של הרכב ואת ההתראות בסקירה.</li></ol></details>
  <details><summary>רישיון רכב</summary><ol>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlC)}</li>
- <li>אחרי זה: ניהול ← רישיון רכב. ליד כל רכב לוחצים "העלאה", ומצלמים את הרישיון או בוחרים תמונה מהגלריה. ${go('mng','sec-lic','מעבר לרישיון רכב')}</li>
+ <li>אחרי זה: ניהול ← רכבים ← רישיון רכב. ליד כל רכב לוחצים "העלאה", ומצלמים את הרישיון או בוחרים תמונה מהגלריה. ${go('mng','sec-lic','מעבר לרישיון רכב')}</li>
  <li>כשמתקבל רישיון חדש (למשל אחרי טסט שנתי) לוחצים "החלפה". התמונה הקודמת נמחקת.</li>
  <li>לצפייה לוחצים "צפייה". הרישיון מוצג רק למנהל.</li>
  <li>רק אם ההעלאה נכשלת: מריצים גם את הקטע הבא ומנסים שוב. ${sqlL}${pre(sqlD)}</li></ol></details>
@@ -1026,7 +1014,7 @@ Deno.serve(async (req) => {
  <li>"אימייל או סיסמה שגויים": אימייל באותיות קטנות ואיפוס סיסמה לפי המדריך.</li>
  <li>נהג חדש לא מופיע: להריץ את שאילתת הפרופילים (בקטע "הוספת נהג חדש"). ${sqlL}</li>
  <li>רואים גרסה ישנה: לפתוח מהכתובת, או בלשונית גלישה בסתר. ${L(site,'פתיחת האתר')}</li>
- <li>"הקפיצה בק"מ גדולה מדי": לתקן ב-ניהול ← עריכת ק"מ לרכב. ${go('mng','sec-kmfix','מעבר לעריכת ק"מ')}</li>
+ <li>"הקפיצה בק"מ גדולה מדי": לתקן ב-ניהול ← רכבים ← עריכת ק"מ לרכב. ${go('mng','sec-kmfix','מעבר לעריכת ק"מ')}</li>
  <li>האתר לא נטען או מציג שגיאה אחרי כמה ימים בלי שימוש: ייתכן ש-Supabase השהה את הפרויקט. נכנסים לדף הפרויקט ולוחצים Restore project (או Resume). ${L(sb0,'דף הפרויקט')}</li></ol></details>`;
 }
 function render(){
@@ -1065,7 +1053,7 @@ async function readInvoice(blob){
  try{
   const image=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=no;r.readAsDataURL(blob)});
   const t=new Promise((_,no)=>setTimeout(()=>no(new Error('timeout')),45000));
-  const{data,error}=await Promise.race([sb.functions.invoke('read-invoice',{body:{image}}),t]);
+  const{data,error}=await Promise.race([sb.functions.invoke(FN_PUSH,{body:{mode:'read',image}}),t]);
   if(error||!data||!data.ok||!data.data||data.data.readable===false)return null;
   return data.data;
  }catch(e){console.error(e);return null}
@@ -1198,7 +1186,8 @@ document.addEventListener('click',async e=>{
  const a=b.dataset.a;
  if(a==='veh')openVeh(b.dataset.id);
  if(a==='back'){closeVeh();render();window.scrollTo(0,vy)}
- if(a==='tab'){closeVeh();ui.tab=b.dataset.v;ui.year=null;const to=b.dataset.to;render();const t=to&&document.getElementById(to);if(t)t.scrollIntoView();else window.scrollTo(0,0)}
+ if(a==='tab'){closeVeh();ui.tab=b.dataset.v;ui.year=null;const to=b.dataset.to;if(b.dataset.v==='mng'&&SUBOF[to])ui.sub=SUBOF[to];render();const t=to&&document.getElementById(to);if(t){const d=t.tagName==='DETAILS'?t:t.closest('details');if(d)d.open=true;t.scrollIntoView()}else window.scrollTo(0,0)}
+ if(a==='sub'){ui.sub=b.dataset.v;render();window.scrollTo(0,0)}
  if(a==='costyear'){ui.tab='hist';ui.year=new Date().getFullYear();render();window.scrollTo(0,0)}
  if(a==='allsvc'){ui.year=null;render();window.scrollTo(0,0)}
  if(a==='install'&&instEv){const ev=instEv;instEv=null;ev.prompt();try{await ev.userChoice}catch(e){}drawInst()} if(a==='rc'){
