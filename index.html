@@ -52,7 +52,7 @@ label.filebtn{display:inline-block;text-align:center;cursor:pointer}.filebtn inp
 .odo i{font-style:normal;background:var(--odb);color:var(--odt);width:36px;height:50px;display:grid;place-items:center;border-radius:5px;font-size:28px;font-weight:700}
 .odo small{align-self:end;margin-inline-start:8px}
 .tags{display:flex;gap:6px;flex-wrap:wrap}
-#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--tx);color:var(--bg);padding:10px 18px;border-radius:8px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast{z-index:10;position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--tx);color:var(--bg);padding:10px 18px;border-radius:8px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
 #toast.on{opacity:1}
 details{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:2px 14px;margin-bottom:10px}
 summary{cursor:pointer;padding:12px 0;font-weight:500}
@@ -67,12 +67,15 @@ a.btn{text-decoration:none;display:inline-block}
 .instline{display:block;width:100%;margin-bottom:12px}
 #ov{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;padding:16px;z-index:9}
 #ov.on{display:flex}#ov img{max-width:100%;max-height:100%;border-radius:6px}
+#ed{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;overflow-y:auto;padding:16px;z-index:9}
+#ed.on{display:block}#ed .card{max-width:480px;margin:0 auto}
 </style>
 </head>
 <body>
 <header><h1>ניהול תחזוקת צי רכב</h1><div id="who"></div></header>
 <main><div id="tabs"></div><div id="instbar"></div><div id="pushbar"></div><div id="view"><div class="card">טוען...</div></div></main>
 <div id="ov"></div>
+<div id="ed"></div>
 <div id="toast" role="status"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
@@ -288,14 +291,16 @@ function svcForm(vid){
  </div>
  <button class="btn">שמירת טיפול</button></div></form>`;
 }
+const editBtn=s=>me&&me.role==='manager'?`<button type="button" class="btn ghost sm" data-a="svcedit" data-id="${s.id}">עריכה</button>`:'';
 function svcTable(list){
- return `<div class="card scroll"><table><tr><th>תאריך</th><th>רכב</th><th>סוג</th><th>ק"מ</th><th>עלות</th><th>מוסך</th><th>קבלה</th></tr>${
+ const m=me&&me.role==='manager';
+ return `<div class="card scroll"><table><tr>${m?'<th></th>':''}<th>תאריך</th><th>רכב</th><th>סוג</th><th>ק"מ</th><th>עלות</th><th>מוסך</th><th>קבלה</th></tr>${
  list.map(s=>{const v=byId(s.vehicle_id)||{model:'?',plate:''};
- return `<tr><td>${fd(s.service_date)}</td><td>${vname(v)}</td><td>${TYPES[s.type]||esc(s.type)}</td><td>${fmt(s.km)}</td><td>₪${fmt(s.cost)}</td><td>${esc(s.garage||'')}</td><td>${s.invoice_path?`<button class="btn ghost sm" data-a="rc" data-p="${esc(s.invoice_path)}">צפייה</button>`:'—'}</td></tr>`}).join('')
- ||'<tr><td colspan="7">עוד לא נרשמו טיפולים</td></tr>'}</table></div>`;
+ return `<tr>${m?`<td>${editBtn(s)}</td>`:''}<td>${fd(s.service_date)}</td><td>${vname(v)}</td><td>${TYPES[s.type]||esc(s.type)}</td><td>${fmt(s.km)}</td><td>₪${fmt(s.cost)}</td><td>${esc(s.garage||'')}</td><td>${s.invoice_path?`<button class="btn ghost sm" data-a="rc" data-p="${esc(s.invoice_path)}">צפייה</button>`:'—'}</td></tr>`}).join('')
+ ||`<tr><td colspan="${m?8:7}">עוד לא נרשמו טיפולים</td></tr>`}</table></div>`;
 }
 function svcList(l,showVeh,empty){
- return `<div class="card list">${l.map(s=>{const v=byId(s.vehicle_id)||{model:'?',plate:''};return `<div class="row"><span>${fd(s.service_date)}${showVeh?' · '+vname(v):''}<br><small>${TYPES[s.type]||esc(s.type)}${s.garage?' · '+esc(s.garage):''} · ${fmt(s.km)} ק"מ</small></span><span class="tags"><b>₪${fmt(s.cost)}</b>${s.invoice_path?`<button type="button" class="btn ghost sm" data-a="rc" data-p="${esc(s.invoice_path)}">קבלה</button>`:''}</span></div>`}).join('')||`<div class="row">${empty||'עוד לא נרשמו טיפולים'}</div>`}</div>`;
+ return `<div class="card list">${l.map(s=>{const v=byId(s.vehicle_id)||{model:'?',plate:''};return `<div class="row"><span>${fd(s.service_date)}${showVeh?' · '+vname(v):''}<br><small>${TYPES[s.type]||esc(s.type)}${s.garage?' · '+esc(s.garage):''} · ${fmt(s.km)} ק"מ</small></span><span class="tags"><b>₪${fmt(s.cost)}</b>${editBtn(s)}${s.invoice_path?`<button type="button" class="btn ghost sm" data-a="rc" data-p="${esc(s.invoice_path)}">קבלה</button>`:''}</span></div>`}).join('')||`<div class="row">${empty||'עוד לא נרשמו טיפולים'}</div>`}</div>`;
 }
 const ySvcs=y=>D.services.filter(s=>new Date(s.service_date).getFullYear()===y);
 function viewHist(){
@@ -909,7 +914,7 @@ Deno.serve(async (req) => {
  <div class="tags" style="margin-bottom:12px">${L(site,'פתיחת האתר')}</div></details>
  <details><summary>דף לכל רכב</summary><ol>
  <li>בסקירה לוחצים על רכב ברשימת הצי, או על שמו בקטע "דורש תשומת לב". נפתח דף עם כל מה שקשור לרכב.</li>
- <li>בדף: הק"מ והסטטוס, הנהג (אפשר להחליף), התקשרות ושליחת תזכורת, עלות הטיפולים, רישום טיפול חדש, היסטוריית הטיפולים והחשבוניות, רישיון הרכב ותיקון ק"מ.</li>
+ <li>בדף: הק"מ והסטטוס, הנהג (אפשר להחליף), התקשרות ושליחת תזכורת, עלות הטיפולים, רישום טיפול חדש, היסטוריית הטיפולים והחשבוניות (ליד כל טיפול יש כפתור "עריכה" לתיקון סוג, תאריך, ק"מ, עלות ומוסך, בלי לשלוח מייל נוסף), רישיון הרכב ותיקון ק"מ.</li>
  <li>חזרה לסקירה: לוחצים "חזרה לסקירה" או על כפתור החזרה של הטלפון.</li></ol></details>
  <details><summary>הוספת נהג חדש</summary><ol>
  <li>ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. ${L(sb0+'/auth/users','פתיחה')}</li>
@@ -1097,6 +1102,18 @@ const H={
   const{error}=await sb.from('services').insert({vehicle_id:o.vid,type:o.type,service_date:o.date,km:+o.km,cost:+o.cost||0,garage:o.garage||null,invoice_path:path});
   return res(error,'הטיפול נשמר')
  },
+ async svcedit(o){
+  if(!me||me.role!=='manager')return[0,'רק מנהל יכול לערוך טיפול'];
+  if(!o.id||!TYPES[o.type])return[0,'סוג הטיפול לא תקין'];
+  if(!o.date)return[0,'צריך למלא תאריך'];
+  if(o.km===''||o.km==null||+o.km<0)return[0,'צריך למלא ק"מ'];
+  const cost=+o.cost||0;if(cost<0)return[0,'העלות לא יכולה להיות שלילית'];
+  const{data,error}=await sb.from('services').update({type:o.type,service_date:o.date,km:+o.km,cost,garage:(o.garage||'').trim()||null}).eq('id',o.id).select('id');
+  if(error)return res(error,'');
+  if(!data||!data.length)return[0,'השינוי לא נשמר. ייתכן שחסרה הרשאת עריכה במסד הנתונים'];
+  $('#ed').classList.remove('on');
+  return[1,'הטיפול עודכן']
+ },
  async veh(o){const{error}=await sb.from('vehicles').insert({plate:o.plate.trim(),model:o.model.trim(),year:num(o.year),driver_id:o.driverId||null,km:+o.km,test_date:o.test||null,insurance_date:o.ins||null});return res(error,'הרכב נוסף')},
  async kmfix(o){
   const v=byId(o.vid),k=+o.km;if(!v)return[0,'הרכב לא נמצא'];
@@ -1121,6 +1138,7 @@ document.addEventListener('submit',async e=>{
 });
 document.addEventListener('click',async e=>{
  if(e.target.closest('#ov')){$('#ov').classList.remove('on');return}
+ if(e.target.id==='ed'){$('#ed').classList.remove('on');return}
  const b=e.target.closest('[data-a]');if(!b)return;
  const a=b.dataset.a;
  if(a==='veh')openVeh(b.dataset.id);
@@ -1145,6 +1163,20 @@ document.addEventListener('click',async e=>{
   toast(data.drivers===0?'כל הנהגים עדכנו ק"מ, אין למי לשלוח':`נשלחו ${data.sent} התראות. בלי התראות פעילות: ${data.noPush.length?data.noPush.join(', '):'אין'}`,6000);
  }
  if(a==='svcman'){const f=b.closest('form');svcManual(f,null,'');b.hidden=true}
+ if(a==='svcedit'){
+  const s=D.services.find(x=>x.id===b.dataset.id);if(!s)return;
+  const v=byId(s.vehicle_id)||{model:'?',plate:''};
+  $('#ed').innerHTML=`<form class="card form" data-f="svcedit"><h3>עריכת טיפול</h3><small>${vname(v)}</small><input type="hidden" name="id" value="${esc(s.id)}">
+  <label>סוג טיפול<select name="type" required>${Object.entries(TYPES).map(([k,t])=>`<option value="${k}"${k===s.type?' selected':''}>${t}</option>`).join('')}</select></label>
+  <label>תאריך<input type="date" name="date" value="${esc(s.service_date)}" required></label>
+  <label>ק"מ בטיפול<input type="number" name="km" min="0" value="${esc(s.km)}" required></label>
+  <label>עלות (₪)<input type="number" name="cost" min="0" step="any" value="${esc(s.cost)}"></label>
+  <label>מוסך<input name="garage" value="${esc(s.garage||'')}"></label>
+  <p class="note">החשבונית שצורפה נשארת כמו שהיא, ולא נשלח מייל נוסף להנהלת החשבונות. ק"מ הרכב הנוכחי לא משתנה.</p>
+  <button class="btn">שמירת שינויים</button><button type="button" class="btn ghost" data-a="edclose">ביטול</button></form>`;
+  $('#ed').classList.add('on');$('#ed').scrollTop=0;
+ }
+ if(a==='edclose')$('#ed').classList.remove('on');
  if(a==='mailtest'){
   const cur=(D.mail&&D.mail.email)||'';
   b.disabled=true;toast('שולח מייל בדיקה...');
