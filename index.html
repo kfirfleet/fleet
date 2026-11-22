@@ -89,7 +89,7 @@ const fmt=n=>Number(n||0).toLocaleString('he-IL');
 const fd=s=>s?new Date(s).toLocaleDateString('he-IL'):'—';
 const cls=l=>['ok','warn','bad'][l];
 const num=x=>x===''||x==null?null:Number(x);
-let sb,me=null,ui={tab:'dash'},D={profiles:[],vehicles:[],services:[],settings:{service_interval_km:10000,service_interval_months:12}};
+let sb,me=null,ui={tab:'dash'},D={profiles:[],vehicles:[],services:[],exp:[],settings:{service_interval_km:10000,service_interval_months:12}};
 const vname=v=>`${esc(v.model)} · ${esc(v.plate)}`;
 const drv=id=>esc((D.profiles.find(p=>p.id===id)||{}).full_name||'לא משויך');
 const byId=id=>D.vehicles.find(v=>v.id===id);
@@ -113,7 +113,8 @@ async function load(uid){
  D.inst=[];
  D.push=null;
  D.mail=null;
- if(me.role==='manager'){const q=await sb.from('app_installs').select('*');D.inst=q.error?null:(q.data||[]);const w=await sb.from('push_subs').select('user_id');D.push=w.error?null:(w.data||[]);const x=await sb.from('invoice_mail').select('email').maybeSingle();D.mail=x.error?null:{email:(x.data&&x.data.email)||''}}
+ D.exp=[];
+ if(me.role==='manager'){const q=await sb.from('app_installs').select('*');D.inst=q.error?null:(q.data||[]);const w=await sb.from('push_subs').select('user_id');D.push=w.error?null:(w.data||[]);const x=await sb.from('invoice_mail').select('email').maybeSingle();D.mail=x.error?null:{email:(x.data&&x.data.email)||''};const y=await sb.from('vehicle_expenses').select('*').order('expense_date',{ascending:false});D.exp=y.error?null:(y.data||[])}
 }
 function showLogin(){
  me=null;$('#who').innerHTML='';$('#tabs').innerHTML='';drawInst();drawPush();
@@ -307,20 +308,39 @@ function svcList(l,showVeh,empty){
  return `<div class="card list">${l.map(s=>{const v=byId(s.vehicle_id)||{model:'?',plate:''};return `<div class="row"><span>${fd(s.service_date)}${showVeh?' · '+vname(v):''}<br><small>${TYPES[s.type]||esc(s.type)}${s.garage?' · '+esc(s.garage):''} · ${fmt(s.km)} ק"מ</small></span><span class="tags"><b>₪${fmt(s.cost)}</b>${editBtn(s)}${s.invoice_path?`<button type="button" class="btn ghost sm" data-a="rc" data-p="${esc(s.invoice_path)}">קבלה</button>`:''}</span></div>`}).join('')||`<div class="row">${empty||'עוד לא נרשמו טיפולים'}</div>`}</div>`;
 }
 const ySvcs=y=>D.services.filter(s=>new Date(s.service_date).getFullYear()===y);
+const EXP={insurance:'ביטוח',test:'טסט'};
+const expYear=(l,y)=>l.filter(x=>new Date(x.expense_date).getFullYear()===y);
+const sumA=(l,k)=>l.reduce((t,x)=>t+Number(x[k]||0),0);
+function expList(l,showVeh,empty){
+ return `<div class="card list">${l.map(x=>{const v=byId(x.vehicle_id)||{model:'?',plate:''};return `<div class="row"><span>${fd(x.expense_date)}${showVeh?' · '+vname(v):''}<br><small>${EXP[x.kind]||esc(x.kind)}${x.note?' · '+esc(x.note):''}</small></span><span class="tags"><b>₪${fmt(x.amount)}</b><button type="button" class="btn ghost sm" data-a="expedit" data-id="${x.id}">עריכה</button></span></div>`}).join('')||`<div class="row">${empty||'עוד לא נרשמו תשלומי ביטוח וטסט'}</div>`}</div>`;
+}
+function expBox(v){
+ if(D.exp===null)return `<h2 id="sec-exp">ביטוח וטסט</h2><div class="card"><small>כדי לרשום עלות ביטוח וטסט צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "ביטוח וטסט לכל רכב".</small></div>`;
+ const exs=D.exp.filter(x=>x.vehicle_id===v.id);
+ return `<h2 id="sec-exp">ביטוח וטסט</h2>${expList(exs,false)}
+ <details><summary>רישום תשלום ביטוח או טסט</summary><form class="form" data-f="exp" style="padding-bottom:12px"><input type="hidden" name="vid" value="${v.id}">
+ <label>סוג<select name="kind" required>${Object.entries(EXP).map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}</select></label>
+ <label>תאריך תשלום<input type="date" name="date" value="${today()}" required></label>
+ <label>סכום (₪)<input type="number" name="amount" min="0" step="any" inputmode="decimal" required></label>
+ <label>תוקף חדש (לא חובה)<input type="date" name="until"></label>
+ <label>הערה (לא חובה)<input name="note" maxlength="80" placeholder="למשל: ביטוח מקיף, או תשלום 1 מתוך 12"></label>
+ <p class="note">אם ממלאים תוקף חדש, תוקף הביטוח או הטסט של הרכב מתעדכן אוטומטית. לא נשלח מייל להנהלת החשבונות.</p>
+ <button class="btn">שמירת תשלום</button></form></details>`;
+}
 function viewHist(){
  if(!ui.year)return svcForm()+'<h2>כל הטיפולים</h2>'+svcTable(D.services);
- const l=ySvcs(ui.year),t=l.reduce((a,s)=>a+Number(s.cost||0),0);
- return `<h2>טיפולים ב-${ui.year}</h2><div class="card"><div class="row" style="padding:0;border:0"><span><b>סה"כ ₪${fmt(t)}</b><br><small>${l.length} טיפולים</small></span><button type="button" class="btn ghost sm" data-a="allsvc">הצגת כל הטיפולים</button></div></div>${svcList(l,true,'עוד לא נרשמו טיפולים השנה')}${svcForm()}`;
+ const l=ySvcs(ui.year),t=sumA(l,'cost'),ex=expYear(D.exp||[],ui.year),te=sumA(ex,'amount'),mgr=me&&me.role==='manager'&&D.exp!==null;
+ return `<h2>הוצאות ב-${ui.year}</h2><div class="card"><div class="row" style="padding:0;border:0"><span><b>סה"כ ₪${fmt(t+te)}</b><br><small>טיפולים ₪${fmt(t)} (${l.length})${mgr?` · ביטוח וטסט ₪${fmt(te)} (${ex.length})`:''}</small></span><button type="button" class="btn ghost sm" data-a="allsvc">הצגת כל הטיפולים</button></div></div><h2>טיפולים</h2>${svcList(l,true,'עוד לא נרשמו טיפולים השנה')}${mgr?`<h2>ביטוח וטסט</h2>${expList(ex,true,'עוד לא נרשמו תשלומי ביטוח וטסט השנה')}`:''}${svcForm()}`;
 }
 function viewDash(){
  const at=attention(),yr=new Date().getFullYear();
- const cost=ySvcs(yr).reduce((t,s)=>t+Number(s.cost||0),0);
+ const cost=ySvcs(yr).reduce((t,s)=>t+Number(s.cost||0),0)+sumA(expYear(D.exp||[],yr),'amount');
  const dr=id=>D.profiles.find(p=>p.id===id)||{};
  const rows=at.map(x=>{
   const p=dr(x.v.driver_id),w=x.stale&&p.phone?waLink(p.phone,p.full_name||''):'';
   return `<div class="row"><button type="button" class="rowlink" data-a="veh" data-id="${x.v.id}"><b>${vname(x.v)}</b><small>${drv(x.v.driver_id)}</small></button><span class="tags">${x.items.map(i=>`<span class="b ${cls(i.lvl)}">${i.txt}</span>`).join('')}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת</a>`:''}</span></div>`}).join('');
  const cards=D.vehicles.map(v=>{const s=svcStatus(v);return `<button type="button" class="card vcard" data-a="veh" data-id="${v.id}"><b>${esc(v.model)}</b><small>${esc(v.plate)}</small><small>${drv(v.driver_id)}</small><span class="vkm">${fmt(v.km)} ק"מ</span><span class="tags"><span class="b ${cls(s.lvl)}">${s.txt}</span>${docs(v).map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</span></button>`}).join('');
- return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><div class="card"><small>דורשים תשומת לב</small><b>${at.length}</b></div><button type="button" class="card stat-link" data-a="costyear"><small>עלות טיפולים השנה</small><b>₪${fmt(cost)}</b><small>לחיצה לפירוט</small></button></div>
+ return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><div class="card"><small>דורשים תשומת לב</small><b>${at.length}</b></div><button type="button" class="card stat-link" data-a="costyear"><small>הוצאות השנה</small><b>₪${fmt(cost)}</b><small>טיפולים, ביטוח וטסט. לחיצה לפירוט</small></button></div>
  ${instLine()}<h2>דורש תשומת לב</h2>${at.length?`<div class="card list">${rows}</div>`:'<div class="card">הכול תקין, אין התראות פתוחות</div>'}
  <h2>הצי <small>(לחיצה על רכב פותחת את כל הפרטים עליו)</small></h2>${cards?`<div class="fleet">${cards}</div>`:'<div class="card">עוד לא נוספו רכבים</div>'}`;
 }
@@ -349,6 +369,7 @@ function viewVeh(v){
  const digits=String(v.km).padStart(6,'0').split('').map(c=>`<i>${c}</i>`).join('');
  const svs=D.services.filter(x=>x.vehicle_id===v.id),yr=new Date().getFullYear();
  const sum=l=>l.reduce((t,x)=>t+Number(x.cost||0),0);
+ const exs=(D.exp||[]).filter(x=>x.vehicle_id===v.id),exY=expYear(exs,yr),yS=sum(svs.filter(x=>new Date(x.service_date).getFullYear()===yr)),yI=sumA(exY.filter(x=>x.kind==='insurance'),'amount'),yT=sumA(exY.filter(x=>x.kind==='test'),'amount');
  const stale=!!v.driver_id&&age>=REM_DAYS,w=stale&&p&&p.phone?waLink(p.phone,p.full_name||''):'';
  const opts='<option value="">ללא</option>'+D.profiles.filter(x=>x.role==='driver').map(x=>`<option value="${x.id}"${x.id===v.driver_id?' selected':''}>${esc(x.full_name)}</option>`).join('');
  return `<button type="button" class="btn ghost sm" data-a="back">‹ חזרה לסקירה</button>
@@ -356,9 +377,10 @@ function viewVeh(v){
  <div class="odo">${digits}<small>ק"מ</small></div>
  <div class="tags"><span class="b ${cls(s.lvl)}">${s.txt}</span>${dc.map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}${stale?`<span class="b warn">ק"מ לא עודכן ${age} ימים</span>`:''}</div></div>
  <div class="card list"><div class="row"><span>נהג</span><select data-assign="${v.id}" aria-label="נהג">${opts}</select></div>${p&&(p.phone||w)?`<div class="row"><span><small>${esc(p.phone||'')}</small></span><span class="tags">${p.phone?`<a class="btn ghost sm" href="tel:${esc(p.phone)}">התקשרות</a>`:''}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת לק"מ</a>`:''}</span></div>`:''}</div>
- <div class="stats"><div class="card"><small>עלות טיפולים השנה</small><b>₪${fmt(sum(svs.filter(x=>new Date(x.service_date).getFullYear()===yr)))}</b></div><div class="card"><small>עלות כוללת</small><b>₪${fmt(sum(svs))}</b></div></div>
+ <div class="stats"><div class="card"><small>הוצאות השנה</small><b>₪${fmt(yS+yI+yT)}</b><small>טיפולים ₪${fmt(yS)} · ביטוח ₪${fmt(yI)} · טסט ₪${fmt(yT)}</small></div><div class="card"><small>סך כל ההוצאות</small><b>₪${fmt(sum(svs)+sumA(exs,'amount'))}</b></div></div>
  ${ivBox(v)}
  ${vedBox(v)}
+ ${expBox(v)}
  ${svcForm(v.id)}<h2>היסטוריית טיפולים</h2>${svcList(svs,false)}
  ${licBox(v)}
  <details><summary>תיקון קילומטראז'</summary><form class="form" data-f="kmfix" style="padding-bottom:12px"><input type="hidden" name="vid" value="${v.id}"><label>ק"מ חדש<input type="number" name="km" min="0" value="${v.km}" required></label><button class="btn">עדכון ק"מ</button></form></details>`;
@@ -435,6 +457,23 @@ create policy app_installs_update on public.app_installs for update to authentic
  const sqlC=`alter table public.vehicles
   add column if not exists license_path text,
   add column if not exists license_at timestamptz;`;
+ const sqlX=`create table if not exists public.vehicle_expenses (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_id uuid not null references public.vehicles(id) on delete cascade,
+  kind text not null check (kind in ('insurance', 'test')),
+  expense_date date not null default current_date,
+  amount numeric(10,2) not null check (amount >= 0),
+  note text,
+  created_by uuid default auth.uid(),
+  created_at timestamptz not null default now()
+);
+create index if not exists vehicle_expenses_vehicle_idx on public.vehicle_expenses (vehicle_id);
+alter table public.vehicle_expenses enable row level security;
+grant select, insert, update, delete on public.vehicle_expenses to authenticated;
+grant all on public.vehicle_expenses to service_role;
+drop policy if exists vehicle_expenses_mgr on public.vehicle_expenses;
+create policy vehicle_expenses_mgr on public.vehicle_expenses for all to authenticated
+  using (public.is_manager()) with check (public.is_manager());`;
  const sqlV=`alter table public.vehicles
   add column if not exists service_interval_km int check (service_interval_km > 0),
   add column if not exists service_interval_months int check (service_interval_months > 0);`;
@@ -729,9 +768,43 @@ const INVOICE_PROMPT = [
   'garage = the business name.',
   'plate = the vehicle license plate digits only, only if a vehicle number is written, otherwise null.',
   'summary = what was done, in Hebrew, at most 60 characters, or null.',
+  'Inside string values never use the double-quote character (write בע״מ with the Hebrew gershayim mark, not a plain quote). Do not use code fences.',
   'Never guess. Use null for anything that is missing or unclear.',
   'If the image is not a receipt or an invoice, answer {"readable": false}.',
 ].join(' ')
+
+// מוציא את ה-JSON מתשובת המודל; אם יש בו שגיאת תחביר (למשל גרשיים בשם מוסך) שולף את השדות אחד אחד
+function looseJson(t: string): Record<string, unknown> | null {
+  const a = t.indexOf('{')
+  const b = t.lastIndexOf('}')
+  if (a < 0 || b < a) return null
+  const s = t.slice(a, b + 1)
+  try {
+    return JSON.parse(s)
+  } catch (_e) {
+    // ממשיכים לשליפה ידנית
+  }
+  const readable = s.match(/"readable"\s*:\s*(true|false)/)
+  if (!readable) return null
+  const date = s.match(/"date"\s*:\s*"(\d{4}-\d{2}-\d{2})"/)
+  const num = (k: string) => {
+    const m = s.match(new RegExp('"' + k + '"\\s*:\\s*(-?[0-9][0-9.]*)'))
+    return m ? Number(m[1]) : null
+  }
+  const str = (k: string, after: string) => {
+    const m = s.match(new RegExp('"' + k + '"\\s*:\\s*"([\\s\\S]*?)"\\s*' + after))
+    return m ? m[1].replace(/\\"/g, '"') : null
+  }
+  return {
+    readable: readable[1] === 'true',
+    date: date ? date[1] : null,
+    cost: num('cost'),
+    km: num('km'),
+    garage: str('garage', ',\\s*"plate"'),
+    plate: str('plate', '[,}]'),
+    summary: str('summary', '\\}$'),
+  }
+}
 
 async function readInvoice(admin: Admin, userId: string, image: unknown) {
   // רק מנהל, או נהג שמשויך אליו רכב, יכול להשתמש בשירות (כל קריאה עולה כסף קטן)
@@ -743,8 +816,15 @@ async function readInvoice(admin: Admin, userId: string, image: unknown) {
   if (typeof image !== 'string' || image.length < 100 || image.length > 7000000) {
     return reply({ ok: false, error: 'bad image' }, 400)
   }
-  const key = Deno.env.get('ANTHROPIC_API_KEY')
+  const rawKey = Deno.env.get('ANTHROPIC_API_KEY') ?? ''
+  // מפתח תקין הוא תווי ASCII בלבד: זורקים רווחים, שורות חדשות ותווים בלתי נראים שנדבקו בטעות
+  const key = rawKey.replace(/[^\x21-\x7E]/g, '')
   if (!key) return reply({ ok: false, error: 'missing ANTHROPIC_API_KEY' }, 500)
+  const hide = (t: string) => t.split(rawKey).join('[key]').split(key).join('[key]')
+  const fail = (why: string, detail: string) => {
+    console.error('read fail:', hide(why).slice(0, 160), hide(detail).slice(0, 400))
+    return reply({ ok: false, error: hide(why).slice(0, 160) }, 502)
+  }
   const ws = Deno.env.get('ANTHROPIC_WORKSPACE_ID')
   let r: Response
   try {
@@ -758,7 +838,7 @@ async function readInvoice(admin: Admin, userId: string, image: unknown) {
       },
       body: JSON.stringify({
         model: Deno.env.get('INVOICE_MODEL') ?? 'claude-sonnet-5-5',
-        max_tokens: 500,
+        max_tokens: 1500,
         messages: [{
           role: 'user',
           content: [
@@ -769,22 +849,24 @@ async function readInvoice(admin: Admin, userId: string, image: unknown) {
       }),
     })
   } catch (e) {
-    return reply({ ok: false, error: 'ai unreachable: ' + String(e).slice(0, 120) }, 502)
+    return fail('ai unreachable: ' + String(e), String(e))
   }
   if (!r.ok) {
-    console.error('anthropic', r.status, (await r.text()).slice(0, 300).split(key).join('[key]'))
+    console.error('anthropic', r.status, hide(await r.text()).slice(0, 300))
     return reply({ ok: false, error: 'ai ' + r.status }, 502)
   }
-  const out = await r.json()
-  const text = (out.content ?? []).map((c: { text?: string }) => c.text ?? '').join('')
-  const a = text.indexOf('{')
-  const b = text.lastIndexOf('}')
-  if (a < 0 || b < a) return reply({ ok: false, error: 'no json' }, 502)
+  let out: { content?: { type?: string; text?: string }[]; stop_reason?: string } | null = null
   try {
-    return reply({ ok: true, data: JSON.parse(text.slice(a, b + 1)) })
+    out = await r.json()
   } catch (_e) {
-    return reply({ ok: false, error: 'bad json' }, 502)
+    return fail('bad ai reply', 'status ' + r.status)
   }
+  const text = (out?.content ?? []).map((c) => c.text ?? '').join('')
+  const info = 'stop=' + out?.stop_reason + ' blocks=' + (out?.content ?? []).map((c) => c.type).join(',') + ' text=' + text
+  if (text.indexOf('{') < 0) return fail('no json', info)
+  const data = looseJson(text)
+  if (!data) return fail('bad json', info)
+  return reply({ ok: true, data })
 }
 
 Deno.serve(async (req) => {
@@ -930,7 +1012,7 @@ function doPost(e) {
  <div class="tags" style="margin-bottom:12px">${L(site,'פתיחת האתר')}</div></details>
  <details><summary>דף לכל רכב</summary><ol>
  <li>בסקירה לוחצים על רכב ברשימת הצי, או על שמו בקטע "דורש תשומת לב". נפתח דף עם כל מה שקשור לרכב.</li>
- <li>בדף: הק"מ והסטטוס, הנהג (אפשר להחליף), התקשרות ושליחת תזכורת, עלות הטיפולים, מרווח הטיפול של הרכב, עריכת פרטי הרכב (מספר רישוי, דגם, שנה, תוקף טסט וביטוח), רישום טיפול חדש, היסטוריית הטיפולים והחשבוניות (ליד כל טיפול יש כפתור "עריכה" לתיקון סוג, תאריך, ק"מ, עלות ומוסך, בלי לשלוח מייל נוסף), רישיון הרכב ותיקון ק"מ.</li>
+ <li>בדף: הק"מ והסטטוס, הנהג (אפשר להחליף), התקשרות ושליחת תזכורת, ההוצאות (טיפולים, ביטוח וטסט), מרווח הטיפול של הרכב, עריכת פרטי הרכב (מספר רישוי, דגם, שנה, תוקף טסט וביטוח), רישום תשלום ביטוח או טסט, רישום טיפול חדש, היסטוריית הטיפולים והחשבוניות (ליד כל טיפול יש כפתור "עריכה" לתיקון סוג, תאריך, ק"מ, עלות ומוסך, בלי לשלוח מייל נוסף), רישיון הרכב ותיקון ק"מ.</li>
  <li>חזרה לסקירה: לוחצים "חזרה לסקירה" או על כפתור החזרה של הטלפון.</li></ol></details>
  <details><summary>הוספת נהג חדש</summary><ol>
  <li>ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. ${L(sb0+'/auth/users','פתיחה')}</li>
@@ -994,10 +1076,17 @@ function doPost(e) {
  <li>שלב 6: באתר, ניהול ← הגדרות ← "חשבוניות להנהלת החשבונות": כותבים את המייל של הנהלת החשבונות ולוחצים שמירה. אחר כך לוחצים "שליחת מייל בדיקה". המייל נשלח אליך (לכתובת שאיתה אתה מתחבר לאתר), לא להנהלת החשבונות. הוא אמור להגיע תוך דקה, ואם לא, בודקים בספאם. ${go('mng','sec-mail','מעבר לחשבוניות להנהלת החשבונות')}</li>
  <li>לכבות את השליחה: מוחקים את הכתובת ולוחצים שמירה.</li>
  <li>אם מייל של חשבונית אמיתית לא הגיע: ב-SQL Editor מריצים את השאילתה הבאה ומסתכלים בשורה האחרונה. 401: המתג Verify JWT דלוק. 400 עם bad mode: שלב 5 לא בוצע. 502 עם MAIL_SCRIPT_URL: שלב 4 לא בוצע. 502 עם script bad reply: בפריסה לא נבחר Anyone, או שלא אושרו הרשאות. אחרי שינוי בקוד של הסקריפט צריך לפרוס מחדש: Deploy ← Manage deployments ← סמל העיפרון ← בשורה Version בוחרים New version ← Deploy. ${sqlL}${pre(sqlR3)}</li></ol></details>
+ <details><summary>ביטוח וטסט לכל רכב</summary><ol>
+ <li>מה זה עושה: רושמים כל תשלום של ביטוח או טסט לכל רכב (תאריך וסכום). הסכומים נכנסים להוצאות השנה ולסך ההוצאות של הרכב, לצד עלות הטיפולים. רק המנהל רואה ורושם, נהגים לא רואים את זה.</li>
+ <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlX)}</li>
+ <li>אחרי זה: בסקירה לוחצים על הרכב. בקטע "ביטוח וטסט" לוחצים "רישום תשלום ביטוח או טסט", בוחרים סוג, תאריך וסכום, ושומרים. אם ממלאים גם "תוקף חדש", תוקף הביטוח או הטסט של הרכב מתעדכן ולא צריך לעדכן אותו בנפרד.</li>
+ <li>ביטוח בתשלומים: אפשר לרשום כל תשלום בנפרד (ובהערה, למשל "תשלום 1 מתוך 12"), או לרשום את הסכום השנתי כולו ביום התשלום הראשון.</li>
+ <li>תיקון או מחיקה: ליד כל תשלום ברשימה יש כפתור "עריכה", ובתוכו גם "מחיקת התשלום".</li>
+ <li>סיכומים: בדף הרכב "הוצאות השנה" ו"סך כל ההוצאות" כוללים טיפולים, ביטוח וטסט. בסקירה הכרטיס "הוצאות השנה" כולל את כל הצי, ולחיצה עליו מציגה את הפירוט.</li></ol></details>
  <details><summary>מרווח טיפול לכל רכב</summary><ol>
  <li>למה: הכלל הכללי לכל הצי נקבע ב-ניהול ← הגדרות ← "כללי תזכורת לטיפול תקופתי". רכב שצריך מרווח אחר (למשל טיפול כל 15,000 ק"מ כשהכלל הכללי הוא 30,000) מקבל מרווח משלו.</li>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlV)}</li>
- <li>אחרי זה: בסקירה לוחצים על הרכב. מתחת לעלות הטיפולים יש שורה "מרווח טיפול: כל ... ק"מ או ... חודשים". לוחצים עליה, ממלאים כל כמה ק"מ ו/או כל כמה חודשים, ולוחצים "שמירת מרווח".</li>
+ <li>אחרי זה: בסקירה לוחצים על הרכב. מתחת להוצאות יש שורה "מרווח טיפול: כל ... ק"מ או ... חודשים". לוחצים עליה, ממלאים כל כמה ק"מ ו/או כל כמה חודשים, ולוחצים "שמירת מרווח".</li>
  <li>שדה ריק משתמש בכלל הכללי. אם מוחקים את שני השדות ושומרים, הרכב חוזר לכלל הכללי.</li>
  <li>המרווח קובע את "טיפול בעוד ... ק"מ" של הרכב ואת ההתראות בסקירה.</li></ol></details>
  <details><summary>רישיון רכב</summary><ol>
@@ -1035,6 +1124,10 @@ function toast(m,ms=2400){const t=$('#toast');t.textContent=m;t.classList.add('o
 function res(e,ok){
  if(!e)return[1,ok];console.error(e);const m=e.message||'';
  return[0,m.includes('cannot decrease')?'הקילומטראז\' לא יכול לרדת':e.code==='23505'?'מספר הרישוי כבר קיים':'הפעולה נכשלה, נסה שוב'];
+}
+function expErr(e){
+ console.error(e);const m=e.message||'';
+ return[0,m.includes('vehicle_expenses')||e.code==='42P01'||e.code==='PGRST205'?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "ביטוח וטסט לכל רכב"':'השמירה נכשלה, נסה שוב'];
 }
 function shrink(file,max=1600){
  return new Promise((ok,no)=>{
@@ -1157,6 +1250,31 @@ const H={
   if(!data||!data.length)return[0,'השינוי לא נשמר. ייתכן שחסרה הרשאה במסד הנתונים'];
   return[1,km==null&&mo==null?'הרכב חוזר להשתמש בכלל הכללי':'מרווח הטיפול של הרכב עודכן']
  },
+ async exp(o){
+  if(!me||me.role!=='manager')return[0,'רק מנהל יכול לרשום הוצאות'];
+  if(!EXP[o.kind])return[0,'צריך לבחור ביטוח או טסט'];
+  if(!o.date)return[0,'צריך למלא תאריך'];
+  const amount=+o.amount;if(!(amount>0)||amount>=1e8)return[0,'צריך למלא סכום גדול מאפס'];
+  const{error}=await sb.from('vehicle_expenses').insert({vehicle_id:o.vid,kind:o.kind,expense_date:o.date,amount,note:(o.note||'').trim()||null});
+  if(error)return expErr(error);
+  if(o.until){
+   const{data,error:e2}=await sb.from('vehicles').update(o.kind==='insurance'?{insurance_date:o.until}:{test_date:o.until}).eq('id',o.vid).select('id');
+   if(e2||!data||!data.length){console.error(e2);return[1,'התשלום נשמר, אבל התוקף של הרכב לא התעדכן. אפשר לעדכן אותו ב"עריכת פרטי הרכב"']}
+   return[1,`התשלום נשמר, ותוקף ה${EXP[o.kind]} עודכן`];
+  }
+  return[1,'התשלום נשמר'];
+ },
+ async expedit(o){
+  if(!me||me.role!=='manager')return[0,'רק מנהל יכול לערוך הוצאות'];
+  if(!o.id||!EXP[o.kind])return[0,'סוג ההוצאה לא תקין'];
+  if(!o.date)return[0,'צריך למלא תאריך'];
+  const amount=+o.amount;if(!(amount>0)||amount>=1e8)return[0,'צריך למלא סכום גדול מאפס'];
+  const{data,error}=await sb.from('vehicle_expenses').update({kind:o.kind,expense_date:o.date,amount,note:(o.note||'').trim()||null}).eq('id',o.id).select('id');
+  if(error)return expErr(error);
+  if(!data||!data.length)return[0,'השינוי לא נשמר. ייתכן שחסרה הרשאה במסד הנתונים'];
+  $('#ed').classList.remove('on');
+  return[1,'התשלום עודכן']
+ },
  async veh(o){const{error}=await sb.from('vehicles').insert({plate:o.plate.trim(),model:o.model.trim(),year:num(o.year),driver_id:o.driverId||null,km:+o.km,test_date:o.test||null,insurance_date:o.ins||null});return res(error,'הרכב נוסף')},
  async kmfix(o){
   const v=byId(o.vid),k=+o.km;if(!v)return[0,'הרכב לא נמצא'];
@@ -1219,6 +1337,27 @@ document.addEventListener('click',async e=>{
   <p class="note">החשבונית שצורפה נשארת כמו שהיא, ולא נשלח מייל נוסף להנהלת החשבונות. ק"מ הרכב הנוכחי לא משתנה.</p>
   <button class="btn">שמירת שינויים</button><button type="button" class="btn ghost" data-a="edclose">ביטול</button></form>`;
   $('#ed').classList.add('on');$('#ed').scrollTop=0;
+ }
+ if(a==='expedit'){
+  const x=(D.exp||[]).find(y=>y.id===b.dataset.id);if(!x)return;
+  const v=byId(x.vehicle_id)||{model:'?',plate:''};
+  $('#ed').innerHTML=`<form class="card form" data-f="expedit"><h3>עריכת תשלום</h3><small>${vname(v)}</small><input type="hidden" name="id" value="${esc(x.id)}">
+  <label>סוג<select name="kind" required>${Object.entries(EXP).map(([k,t])=>`<option value="${k}"${k===x.kind?' selected':''}>${t}</option>`).join('')}</select></label>
+  <label>תאריך תשלום<input type="date" name="date" value="${esc(x.expense_date)}" required></label>
+  <label>סכום (₪)<input type="number" name="amount" min="0" step="any" inputmode="decimal" value="${esc(x.amount)}" required></label>
+  <label>הערה<input name="note" maxlength="80" value="${esc(x.note||'')}"></label>
+  <p class="note">שינוי כאן לא משנה את תוקף הביטוח או הטסט של הרכב. את התוקף מעדכנים ב"עריכת פרטי הרכב".</p>
+  <button class="btn">שמירת שינויים</button><button type="button" class="btn ghost" data-a="edclose">ביטול</button><button type="button" class="btn ghost" style="color:var(--bad);border-color:var(--bad)" data-a="expdel" data-id="${esc(x.id)}">מחיקת התשלום</button></form>`;
+  $('#ed').classList.add('on');$('#ed').scrollTop=0;
+ }
+ if(a==='expdel'){
+  if(!confirm('למחוק את התשלום הזה? אי אפשר לשחזר.'))return;
+  b.disabled=true;
+  const{data,error}=await sb.from('vehicle_expenses').delete().eq('id',b.dataset.id).select('id');
+  b.disabled=false;
+  if(error){console.error(error);toast('המחיקה נכשלה, נסה שוב');return}
+  if(!data||!data.length){toast('המחיקה לא בוצעה. ייתכן שחסרה הרשאה במסד הנתונים');return}
+  $('#ed').classList.remove('on');await load(me.id);render();toast('התשלום נמחק');
  }
  if(a==='edclose')$('#ed').classList.remove('on');
  if(a==='mailtest'){
