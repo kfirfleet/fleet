@@ -485,6 +485,9 @@ create policy vehicle_expenses_mgr on public.vehicle_expenses for all to authent
  const sqlV=`alter table public.vehicles
   add column if not exists service_interval_km int check (service_interval_km > 0),
   add column if not exists service_interval_months int check (service_interval_months > 0);`;
+ const sqlPdf=`update storage.buckets
+set allowed_mime_types = array['image/jpeg','image/png','image/webp','application/pdf']
+where id = 'invoices';`;
  const sqlD=`drop policy if exists lic_mgr_insert on storage.objects;
 drop policy if exists lic_mgr_select on storage.objects;
 drop policy if exists lic_mgr_delete on storage.objects;
@@ -1093,7 +1096,7 @@ function doPost(e) {
  <li>אם מופיע 401: המתג Verify JWT עדיין דלוק (שלב 4). אם מופיע 500 עם rpc: לא הורץ שלב 2.</li></ol></details>
  <details><summary>קריאת חשבוניות אוטומטית</summary><ol>
  <li>הנהג בוחר רק סוג טיפול ומצלם את החשבונית (או בוחר קובץ מהמכשיר). האתר קורא ממנה את התאריך, הסכום, שם המוסך והק"מ, ושומר לבד. אם אין ק"מ בחשבונית, נלקח הק"מ האחרון של הרכב.</li>
- <li>קובצי PDF: אפשר גם לבחור קובץ PDF שהגיע במייל ונשמר במכשיר (עד 4MB), והאתר קורא גם אותו. הקובץ נשמר עם הטיפול או התשלום, וכשנשלחת חשבונית להנהלת החשבונות היא מצורפת כ-PDF. זה דורש שקוד swift-handler מעודכן לגרסה שבמדריך (שלב 3 למטה). אם ההעלאה נכשלת עם ההודעה "האחסון לא מקבל קובצי PDF": ב-Supabase נכנסים ל-Storage ← invoices ← Edit bucket, ומכבים את ההגבלה על סוגי קבצים (Restrict allowed MIME types).</li>
+ <li>קובצי PDF: אפשר גם לבחור קובץ PDF שהגיע במייל ונשמר במכשיר (עד 4MB), והאתר קורא גם אותו. הקובץ נשמר עם הטיפול או התשלום, וכשנשלחת חשבונית להנהלת החשבונות היא מצורפת כ-PDF. זה דורש שקוד swift-handler מעודכן לגרסה שבמדריך (שלב 3 למטה). אם ההעלאה נכשלת עם ההודעה "האחסון לא מקבל קובצי PDF", זה אומר שהתיקייה invoices מתירה רק תמונות. מתקנים עם הפקודה הזו ב-SQL Editor (ומריצים Run): ${sqlL}${pre(sqlPdf)}</li>
  <li>אם משהו חסר או לא ברור (סכום, תאריך, או מספר רכב שונה מהרכב שנבחר), נפתחים לנהג השדות עם מה שנקרא, והוא משלים ושומר.</li>
  <li>הקריאה עולה כסף קטן (בדרך כלל אגורות בודדות לחשבונית) ועוברת דרך חשבון נפרד ב-Claude Console, לא דרך המנוי הרגיל של Claude. בלי ההגדרה הזו האתר ממשיך לעבוד, והנהג ממלא את הפרטים בעצמו.</li>
  <li>הגדרה חד-פעמית, שלב 1: נכנסים ל-Claude Console, מוסיפים קרדיט בהגדרות החיוב (Billing), ואז ב-API keys לוחצים Create key ומעתיקים את המפתח (מתחיל ב-sk-ant). הוא מוצג פעם אחת בלבד. ${L('https://platform.claude.com/settings/keys','מפתחות API')}</li>
