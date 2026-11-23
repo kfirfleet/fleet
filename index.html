@@ -312,13 +312,17 @@ const EXP={insurance:'ביטוח',test:'טסט'};
 const expYear=(l,y)=>l.filter(x=>new Date(x.expense_date).getFullYear()===y);
 const sumA=(l,k)=>l.reduce((t,x)=>t+Number(x[k]||0),0);
 function expList(l,showVeh,empty){
- return `<div class="card list">${l.map(x=>{const v=byId(x.vehicle_id)||{model:'?',plate:''};return `<div class="row"><span>${fd(x.expense_date)}${showVeh?' · '+vname(v):''}<br><small>${EXP[x.kind]||esc(x.kind)}${x.note?' · '+esc(x.note):''}</small></span><span class="tags"><b>₪${fmt(x.amount)}</b><button type="button" class="btn ghost sm" data-a="expedit" data-id="${x.id}">עריכה</button></span></div>`}).join('')||`<div class="row">${empty||'עוד לא נרשמו תשלומי ביטוח וטסט'}</div>`}</div>`;
+ return `<div class="card list">${l.map(x=>{const v=byId(x.vehicle_id)||{model:'?',plate:''};return `<div class="row"><span>${fd(x.expense_date)}${showVeh?' · '+vname(v):''}<br><small>${EXP[x.kind]||esc(x.kind)}${x.note?' · '+esc(x.note):''}</small></span><span class="tags"><b>₪${fmt(x.amount)}</b>${x.invoice_path?`<button type="button" class="btn ghost sm" data-a="rc" data-p="${esc(x.invoice_path)}">מסמך</button>`:''}<button type="button" class="btn ghost sm" data-a="expedit" data-id="${x.id}">עריכה</button></span></div>`}).join('')||`<div class="row">${empty||'עוד לא נרשמו תשלומי ביטוח וטסט'}</div>`}</div>`;
 }
 function expBox(v){
  if(D.exp===null)return `<h2 id="sec-exp">ביטוח וטסט</h2><div class="card"><small>כדי לרשום עלות ביטוח וטסט צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "ביטוח וטסט לכל רכב".</small></div>`;
  const exs=D.exp.filter(x=>x.vehicle_id===v.id);
  return `<h2 id="sec-exp">ביטוח וטסט</h2>${expList(exs,false)}
  <details><summary>רישום תשלום ביטוח או טסט</summary><form class="form" data-f="exp" style="padding-bottom:12px"><input type="hidden" name="vid" value="${v.id}">
+ <p class="note">מצלמים את המסמך (פוליסה, קבלה או רישיון רכב) והאתר ממלא לבד את הסכום והפרטים. תמיד בדקו אותם לפני השמירה. אפשר גם למלא ידנית.</p>
+ <label>צילום המסמך (לא חובה)<input type="file" name="doc" accept="image/*" capture="environment"></label>
+ <label>או בחירת תמונה מהגלריה<input type="file" name="doc2" accept="image/*"></label>
+ <p class="note docok" hidden></p><p class="svcmsg warn docwarn" role="alert" hidden></p>
  <label>סוג<select name="kind" required>${Object.entries(EXP).map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}</select></label>
  <label>תאריך תשלום<input type="date" name="date" value="${today()}" required></label>
  <label>סכום (₪)<input type="number" name="amount" min="0" step="any" inputmode="decimal" required></label>
@@ -464,9 +468,11 @@ create policy app_installs_update on public.app_installs for update to authentic
   expense_date date not null default current_date,
   amount numeric(10,2) not null check (amount >= 0),
   note text,
+  invoice_path text,
   created_by uuid default auth.uid(),
   created_at timestamptz not null default now()
 );
+alter table public.vehicle_expenses add column if not exists invoice_path text;
 create index if not exists vehicle_expenses_vehicle_idx on public.vehicle_expenses (vehicle_id);
 alter table public.vehicle_expenses enable row level security;
 grant select, insert, update, delete on public.vehicle_expenses to authenticated;
@@ -592,7 +598,7 @@ create trigger services_mail_invoice after insert on public.services
   for each row execute function public.mail_invoice();`;
  const sqlR3=`select status_code, content::text from net._http_response order by id desc limit 3;`;
  const kmFnCode=String.raw`// km-reminders: (1) התראות לטלפון על עדכון ק"מ (Web Push), (2) שליחת חשבוניות להנהלת החשבונות במייל,
-// (3) קריאה אוטומטית של תמונת חשבונית באמצעות Claude (תאריך, סכום, מוסך, ק"מ).
+// (3) קריאה אוטומטית של תמונת חשבונית באמצעות Claude (תאריך, סכום, מוסך, ק"מ), וגם של מסמכי ביטוח וטסט (סכום, תאריך, תוקף).
 // התראות לא צריכות מפתחות חיצוניים. שליחת מייל עוברת דרך סקריפט קטן ב-Gmail שלך (Google Apps Script),
 // וכתובת הסקריפט נשמרת בסוד MAIL_SCRIPT_URL. הקריאה האוטומטית צריכה סוד בשם ANTHROPIC_API_KEY.
 // חשוב: אחרי הפריסה לכבות את Verify JWT של הפונקציה (הפונקציה בודקת הרשאות בעצמה).
@@ -773,6 +779,25 @@ const INVOICE_PROMPT = [
   'If the image is not a receipt or an invoice, answer {"readable": false}.',
 ].join(' ')
 
+// מסמך ביטוח או טסט (פוליסה, קבלה, אגרת רישוי, רישיון רכב)
+const EXPENSE_PROMPT = [
+  'This is a photo of a document about a vehicle in Israel: either a vehicle insurance document (a policy, a premium payment receipt or an invoice, compulsory or comprehensive insurance),',
+  'or an annual vehicle test document (a test station receipt or invoice, an annual licence fee receipt, or the vehicle licence showing its validity date).',
+  'It is mostly in Hebrew, may be handwritten, and may show several papers. Dates in Israel are day/month/year.',
+  'Answer with ONLY one JSON object and nothing else:',
+  '{"readable": true or false, "kind": "insurance" or "test" or "other" or null, "date": "YYYY-MM-DD" or null, "cost": number or null, "until": "YYYY-MM-DD" or null, "plate": string or null, "issuer": string or null, "summary": string or null}',
+  'kind = "insurance" if the document is about vehicle insurance; "test" if it is about the annual test, the licence fee or the vehicle licence validity; otherwise "other".',
+  'date = the payment date, or the issue date of the document if no payment date is shown.',
+  'cost = the total amount actually paid in NIS including VAT, as a plain number. For insurance use the total premium for the whole period unless the document is clearly a receipt for one instalment, then use that instalment. Use null if no amount is shown.',
+  'until = the date until which the insurance or the test / licence is valid (end of the insurance period, "valid until"), otherwise null.',
+  'plate = the vehicle license plate digits only, only if a vehicle number is written, otherwise null.',
+  'issuer = the insurance company, test station or business name.',
+  'summary = a short description in Hebrew, at most 60 characters, for example the insurance type (ביטוח מקיף, ביטוח חובה) or the kind of test document, or null.',
+  'Inside string values never use the double-quote character (write בע״מ with the Hebrew gershayim mark, not a plain quote). Do not use code fences.',
+  'Never guess. Use null for anything that is missing or unclear.',
+  'If the image is not a vehicle insurance or test document, answer {"readable": false}.',
+].join(' ')
+
 // מוציא את ה-JSON מתשובת המודל; אם יש בו שגיאת תחביר (למשל גרשיים בשם מוסך) שולף את השדות אחד אחד
 function looseJson(t: string): Record<string, unknown> | null {
   const a = t.indexOf('{')
@@ -803,13 +828,18 @@ function looseJson(t: string): Record<string, unknown> | null {
     garage: str('garage', ',\\s*"plate"'),
     plate: str('plate', '[,}]'),
     summary: str('summary', '\\}$'),
+    kind: (s.match(/"kind"\s*:\s*"(insurance|test|other)"/) ?? [])[1] ?? null,
+    until: (s.match(/"until"\s*:\s*"(\d{4}-\d{2}-\d{2})"/) ?? [])[1] ?? null,
+    issuer: str('issuer', ',\\s*"summary"'),
   }
 }
 
-async function readInvoice(admin: Admin, userId: string, image: unknown) {
+async function readInvoice(admin: Admin, userId: string, image: unknown, doc = '') {
+  const expense = doc === 'expense'
   // רק מנהל, או נהג שמשויך אליו רכב, יכול להשתמש בשירות (כל קריאה עולה כסף קטן)
   const { data: me } = await admin.from('profiles').select('role').eq('id', userId).maybeSingle()
   if (me?.role !== 'manager') {
+    if (expense) return reply({ ok: false, error: 'forbidden' }, 403)
     const { data: own } = await admin.from('vehicles').select('id').eq('driver_id', userId).limit(1)
     if (!own || own.length === 0) return reply({ ok: false, error: 'forbidden' }, 403)
   }
@@ -843,7 +873,7 @@ async function readInvoice(admin: Admin, userId: string, image: unknown) {
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
-            { type: 'text', text: INVOICE_PROMPT },
+            { type: 'text', text: expense ? EXPENSE_PROMPT : INVOICE_PROMPT },
           ],
         }],
       }),
@@ -917,7 +947,7 @@ Deno.serve(async (req) => {
     }
     if (mode === 'read') {
       if (!userId) return reply({ ok: false, error: 'forbidden' }, 403)
-      return await readInvoice(admin, userId, body.image)
+      return await readInvoice(admin, userId, body.image, String(body.doc ?? ''))
     }
     if (mode === 'cron' && userId) return reply({ ok: false, error: 'forbidden' }, 403)
 
@@ -1080,6 +1110,7 @@ function doPost(e) {
  <li>מה זה עושה: רושמים כל תשלום של ביטוח או טסט לכל רכב (תאריך וסכום). הסכומים נכנסים להוצאות השנה ולסך ההוצאות של הרכב, לצד עלות הטיפולים. רק המנהל רואה ורושם, נהגים לא רואים את זה.</li>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlX)}</li>
  <li>אחרי זה: בסקירה לוחצים על הרכב. בקטע "ביטוח וטסט" לוחצים "רישום תשלום ביטוח או טסט", בוחרים סוג, תאריך וסכום, ושומרים. אם ממלאים גם "תוקף חדש", תוקף הביטוח או הטסט של הרכב מתעדכן ולא צריך לעדכן אותו בנפרד.</li>
+ <li>קריאה אוטומטית של מסמך: בטופס התשלום מצלמים את המסמך (פוליסה, קבלה, אגרת רישוי או רישיון רכב), והאתר ממלא לבד את הסוג, הסכום, תאריך התשלום, התוקף וההערה. תמיד בודקים את הפרטים לפני השמירה. המסמך נשמר עם התשלום, ואפשר לפתוח אותו מהרשימה בכפתור "מסמך". זה דורש שהקריאה האוטומטית של חשבוניות כבר מוגדרת, ושקוד swift-handler מעודכן לגרסה שבמדריך ("קריאת חשבוניות אוטומטית", שלב 3).</li>
  <li>ביטוח בתשלומים: אפשר לרשום כל תשלום בנפרד (ובהערה, למשל "תשלום 1 מתוך 12"), או לרשום את הסכום השנתי כולו ביום התשלום הראשון.</li>
  <li>תיקון או מחיקה: ליד כל תשלום ברשימה יש כפתור "עריכה", ובתוכו גם "מחיקת התשלום".</li>
  <li>סיכומים: בדף הרכב "הוצאות השנה" ו"סך כל ההוצאות" כוללים טיפולים, ביטוח וטסט. בסקירה הכרטיס "הוצאות השנה" כולל את כל הצי, ולחיצה עליו מציגה את הפירוט.</li></ol></details>
@@ -1127,7 +1158,7 @@ function res(e,ok){
 }
 function expErr(e){
  console.error(e);const m=e.message||'';
- return[0,m.includes('vehicle_expenses')||e.code==='42P01'||e.code==='PGRST205'?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "ביטוח וטסט לכל רכב"':'השמירה נכשלה, נסה שוב'];
+ return[0,m.includes('vehicle_expenses')||m.includes('invoice_path')||e.code==='42P01'||e.code==='PGRST205'?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "ביטוח וטסט לכל רכב"':'השמירה נכשלה, נסה שוב'];
 }
 function shrink(file,max=1600){
  return new Promise((ok,no)=>{
@@ -1142,11 +1173,11 @@ function shrink(file,max=1600){
   img.src=u;
  });
 }
-async function readInvoice(blob){
+async function readInvoice(blob,doc){
  try{
   const image=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=no;r.readAsDataURL(blob)});
   const t=new Promise((_,no)=>setTimeout(()=>no(new Error('timeout')),45000));
-  const{data,error}=await Promise.race([sb.functions.invoke(FN_PUSH,{body:{mode:'read',image}}),t]);
+  const{data,error}=await Promise.race([sb.functions.invoke(FN_PUSH,{body:doc?{mode:'read',image,doc}:{mode:'read',image}}),t]);
   if(error||!data||!data.ok||!data.data||data.data.readable===false)return null;
   return data.data;
  }catch(e){console.error(e);return null}
@@ -1163,6 +1194,17 @@ function parseInv(d,v){
  if(km!=null&&v&&(km>v.km+JUMP||km<v.km-JUMP))km=null;
  const pl=dg(d.plate),vp=dg(v&&v.plate);
  return{date,dateBad,cost,km,garage:d.garage?String(d.garage).trim().slice(0,80):null,plate:pl,plateBad:!!(pl&&vp&&pl!==vp)};
+}
+function parseDoc(d,v){
+ const b=parseInv({date:d.date,cost:d.cost,plate:d.plate,garage:d.issuer},v);
+ const kind=EXP[d.kind]?d.kind:null;
+ let until=null,untilBad=false;
+ if(d.until){
+  const lo=new Date(Date.now()-60*DAY).toISOString().slice(0,10),hi=new Date(Date.now()+2200*DAY).toISOString().slice(0,10);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(d.until)&&Date.parse(d.until)&&d.until>=lo&&d.until<=hi)until=d.until;else untilBad=true;
+ }
+ const note=[b.garage,d.summary?String(d.summary).trim():''].filter(Boolean).join(' · ').slice(0,80);
+ return{kind,date:b.date,dateBad:b.dateBad,cost:b.cost,until,untilBad,note,plate:b.plate,plateBad:b.plateBad};
 }
 function svcManual(f,r,msg){
  const m=f.querySelector('.manual');if(!m)return;
@@ -1250,13 +1292,22 @@ const H={
   if(!data||!data.length)return[0,'השינוי לא נשמר. ייתכן שחסרה הרשאה במסד הנתונים'];
   return[1,km==null&&mo==null?'הרכב חוזר להשתמש בכלל הכללי':'מרווח הטיפול של הרכב עודכן']
  },
- async exp(o){
+ async exp(o,f){
   if(!me||me.role!=='manager')return[0,'רק מנהל יכול לרשום הוצאות'];
   if(!EXP[o.kind])return[0,'צריך לבחור ביטוח או טסט'];
   if(!o.date)return[0,'צריך למלא תאריך'];
   const amount=+o.amount;if(!(amount>0)||amount>=1e8)return[0,'צריך למלא סכום גדול מאפס'];
-  const{error}=await sb.from('vehicle_expenses').insert({vehicle_id:o.vid,kind:o.kind,expense_date:o.date,amount,note:(o.note||'').trim()||null});
-  if(error)return expErr(error);
+  let path=null;
+  if(f&&f._doc){
+   const p=`exp/${o.vid}/${crypto.randomUUID()}.jpg`;
+   const{error:ue}=await sb.storage.from('invoices').upload(p,f._doc,{contentType:'image/jpeg'});
+   if(ue){console.error(ue);return[0,'העלאת המסמך נכשלה, נסה שוב']}
+   path=p;
+  }
+  const row={vehicle_id:o.vid,kind:o.kind,expense_date:o.date,amount,note:(o.note||'').trim()||null};
+  if(path)row.invoice_path=path;
+  const{error}=await sb.from('vehicle_expenses').insert(row);
+  if(error){if(path)sb.storage.from('invoices').remove([path]).catch(()=>{});return expErr(error)}
   if(o.until){
    const{data,error:e2}=await sb.from('vehicles').update(o.kind==='insurance'?{insurance_date:o.until}:{test_date:o.until}).eq('id',o.vid).select('id');
    if(e2||!data||!data.length){console.error(e2);return[1,'התשלום נשמר, אבל התוקף של הרכב לא התעדכן. אפשר לעדכן אותו ב"עריכת פרטי הרכב"']}
@@ -1352,11 +1403,13 @@ document.addEventListener('click',async e=>{
  }
  if(a==='expdel'){
   if(!confirm('למחוק את התשלום הזה? אי אפשר לשחזר.'))return;
+  const gone=(D.exp||[]).find(y=>y.id===b.dataset.id);
   b.disabled=true;
   const{data,error}=await sb.from('vehicle_expenses').delete().eq('id',b.dataset.id).select('id');
   b.disabled=false;
   if(error){console.error(error);toast('המחיקה נכשלה, נסה שוב');return}
   if(!data||!data.length){toast('המחיקה לא בוצעה. ייתכן שחסרה הרשאה במסד הנתונים');return}
+  if(gone&&gone.invoice_path)sb.storage.from('invoices').remove([gone.invoice_path]).catch(()=>{});
   $('#ed').classList.remove('on');await load(me.id);render();toast('התשלום נמחק');
  }
  if(a==='edclose')$('#ed').classList.remove('on');
@@ -1396,6 +1449,36 @@ document.addEventListener('change',async e=>{
  if(error){console.error(error);await sb.storage.from('invoices').remove([path]);toast((error.message||'').includes('license_')?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "רישיון רכב"':'השמירה נכשלה, נסה שוב');return}
  if(old){try{await sb.storage.from('invoices').remove([old])}catch(err){console.error(err)}}
  await load(me.id);render();toast('הרישיון נשמר');
+});
+document.addEventListener('change',async e=>{
+ const t=e.target;if(!(t.matches&&t.matches('form[data-f="exp"] input[type="file"]'))||!t.files||!t.files[0])return;
+ const f=t.form,file=t.files[0],tok=f._rt=(f._rt||0)+1,btn=f.querySelector('button:not([type="button"])'),t0=btn.textContent;
+ const ok1=f.querySelector('.docok'),warn=f.querySelector('.docwarn'),v=byId(f.elements.vid.value);
+ const other=t.name==='doc'?f.elements.doc2:f.elements.doc;if(other)other.value='';
+ ok1.hidden=true;warn.hidden=true;btn.disabled=true;btn.textContent='קורא את המסמך...';
+ const done=(txt,bad)=>{if(f._rt!==tok)return;btn.disabled=false;btn.textContent=t0;const el=bad?warn:ok1;el.textContent=txt;el.hidden=false;el.scrollIntoView({block:'center'})};
+ let blob;
+ try{blob=await shrink(file)}catch(err){console.error(err);f._doc=null;done('לא ניתן לעבד את התמונה. נסו תמונה אחרת.',1);return}
+ if(f._rt!==tok)return;
+ f._doc=blob;
+ const raw=await readInvoice(blob,'expense');
+ if(f._rt!==tok)return;
+ if(!raw){done('לא הצלחנו לקרוא את המסמך. המסמך יישמר עם התשלום, ואפשר למלא את הפרטים ידנית.',1);return}
+ const r=parseDoc(raw,v);
+ if(r.kind)f.elements.kind.value=r.kind;
+ if(r.date)f.elements.date.value=r.date;
+ if(r.cost!=null)f.elements.amount.value=r.cost;
+ if(r.until)f.elements.until.value=r.until;
+ if(r.note&&!f.elements.note.value.trim())f.elements.note.value=r.note;
+ const w=[];
+ if(r.plateBad)w.push(`מספר הרכב במסמך (${r.plate}) שונה ממספר הרכב הזה. בדקו שזה המסמך הנכון.`);
+ if(!r.kind)w.push('לא זוהה אם זה ביטוח או טסט. בחרו סוג.');
+ if(r.cost==null)w.push('לא מצאנו סכום. השלימו אותו.');
+ if(r.dateBad)w.push('תאריך התשלום לא ברור. בדקו אותו.');
+ if(r.untilBad)w.push('תאריך התוקף לא ברור. בדקו אותו.');
+ const got=[r.kind?EXP[r.kind]:'',r.cost!=null?'₪'+fmt(r.cost):'',r.until?'תוקף עד '+fd(r.until):''].filter(Boolean).join(' · ');
+ if(w.length)done((got?'קראנו: '+got+'. ':'')+w.join(' '),1);
+ else done('✓ קראנו את המסמך: '+got+'. בדקו שהפרטים נכונים ושמרו.',0);
 });
 document.addEventListener('change',e=>{const t=e.target;if(t.matches&&t.matches('form[data-f="svc"] select[name="type"]')){const m=t.form.querySelector('.more');if(m)m.hidden=!t.value}});
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();instEv=e;drawInst()});
