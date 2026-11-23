@@ -321,6 +321,7 @@ function expBox(v){
  return `<h2 id="sec-exp">ביטוח וטסט</h2>${expList(exs,false)}
  <details><summary>רישום תשלום ביטוח או טסט</summary><form class="form" data-f="exp" style="padding-bottom:12px"><input type="hidden" name="vid" value="${v.id}">
  <p class="note">מצלמים את המסמך (פוליסה, קבלה או רישיון רכב) או בוחרים קובץ שנשמר במכשיר (תמונה או PDF), והאתר ממלא לבד את הסכום והפרטים. תמיד בדקו אותם לפני השמירה. אפשר גם למלא ידנית.</p>
+ ${v.license_path?`<button type="button" class="btn ghost sm" data-a="explic">קריאה מרישיון הרכב ששמור במערכת${v.license_at?' (הועלה ב-'+fd(v.license_at)+')':''}</button><small>בלי להעלות שוב. התשלום יישמר בלי מסמך מצורף.</small>`:''}
  <label>צילום המסמך (לא חובה)<input type="file" name="doc" accept="image/*" capture="environment"></label>
  <label>או בחירת קובץ מהמכשיר (תמונה או PDF)<input type="file" name="doc2" accept="image/*,application/pdf,.pdf"></label>
  <p class="note docok" hidden></p><p class="svcmsg warn docwarn" role="alert" hidden></p>
@@ -1117,7 +1118,7 @@ function doPost(e) {
  <li>מה זה עושה: רושמים כל תשלום של ביטוח או טסט לכל רכב (תאריך וסכום). הסכומים נכנסים להוצאות השנה ולסך ההוצאות של הרכב, לצד עלות הטיפולים. רק המנהל רואה ורושם, נהגים לא רואים את זה.</li>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlX)}</li>
  <li>אחרי זה: בסקירה לוחצים על הרכב. בקטע "ביטוח וטסט" לוחצים "רישום תשלום ביטוח או טסט", בוחרים סוג, תאריך וסכום, ושומרים. אם ממלאים גם "תוקף חדש", תוקף הביטוח או הטסט של הרכב מתעדכן ולא צריך לעדכן אותו בנפרד.</li>
- <li>קריאה אוטומטית של מסמך: בטופס התשלום מצלמים את המסמך (פוליסה, קבלה, אגרת רישוי או רישיון רכב) או בוחרים קובץ שנשמר במכשיר (תמונה, או PDF שהגיע במייל), והאתר ממלא לבד את הסוג, הסכום, תאריך התשלום, התוקף וההערה. תמיד בודקים את הפרטים לפני השמירה. המסמך נשמר עם התשלום, ואפשר לפתוח אותו מהרשימה בכפתור "מסמך". זה דורש שהקריאה האוטומטית של חשבוניות כבר מוגדרת, ושקוד swift-handler מעודכן לגרסה שבמדריך ("קריאת חשבוניות אוטומטית", שלב 3).</li>
+ <li>קריאה אוטומטית של מסמך: בטופס התשלום מצלמים את המסמך (פוליסה, קבלה, אגרת רישוי או רישיון רכב) או בוחרים קובץ שנשמר במכשיר (תמונה, או PDF שהגיע במייל), והאתר ממלא לבד את הסוג, הסכום, תאריך התשלום, התוקף וההערה. תמיד בודקים את הפרטים לפני השמירה. המסמך נשמר עם התשלום, ואפשר לפתוח אותו מהרשימה בכפתור "מסמך". אם כבר הועלה צילום רישיון לרכב (ניהול ← רכבים ← רישיון רכב), יש בטופס גם כפתור "קריאה מרישיון הרכב ששמור במערכת", שקורא ממנו את התוקף (ואת הסכום, אם מופיע) בלי להעלות שוב. במקרה כזה התשלום נשמר בלי מסמך מצורף. זה דורש שהקריאה האוטומטית של חשבוניות כבר מוגדרת, ושקוד swift-handler מעודכן לגרסה שבמדריך ("קריאת חשבוניות אוטומטית", שלב 3).</li>
  <li>ביטוח בתשלומים: אפשר לרשום כל תשלום בנפרד (ובהערה, למשל "תשלום 1 מתוך 12"), או לרשום את הסכום השנתי כולו ביום התשלום הראשון.</li>
  <li>תיקון או מחיקה: ליד כל תשלום ברשימה יש כפתור "עריכה", ובתוכו גם "מחיקת התשלום".</li>
  <li>סיכומים: בדף הרכב "הוצאות השנה" ו"סך כל ההוצאות" כוללים טיפולים, ביטוח וטסט. בסקירה הכרטיס "הוצאות השנה" כולל את כל הצי, ולחיצה עליו מציגה את הפירוט.</li></ol></details>
@@ -1378,6 +1379,11 @@ document.addEventListener('click',async e=>{
  if(a==='sub'){ui.sub=b.dataset.v;render();window.scrollTo(0,0)}
  if(a==='costyear'){ui.tab='hist';ui.year=new Date().getFullYear();render();window.scrollTo(0,0)}
  if(a==='allsvc'){ui.year=null;render();window.scrollTo(0,0)}
+ if(a==='explic'){
+  const f=b.closest('form'),v=f&&byId(f.elements.vid.value);if(!v||!v.license_path)return;
+  f.elements.doc.value='';f.elements.doc2.value='';
+  await docRun(f,async()=>{const{data,error}=await sb.storage.from('invoices').download(v.license_path);if(error||!data)throw error||new Error('empty');return prepFile(data)},'lic');
+ }
  if(a==='install'&&instEv){const ev=instEv;instEv=null;ev.prompt();try{await ev.userChoice}catch(e){}drawInst()} if(a==='rc'){
   const{data,error}=await sb.storage.from('invoices').createSignedUrl(b.dataset.p,300);
   if(error){toast('לא ניתן לפתוח את הקבלה');return}
@@ -1469,20 +1475,19 @@ document.addEventListener('change',async e=>{
  if(old){try{await sb.storage.from('invoices').remove([old])}catch(err){console.error(err)}}
  await load(me.id);render();toast('הרישיון נשמר');
 });
-document.addEventListener('change',async e=>{
- const t=e.target;if(!(t.matches&&t.matches('form[data-f="exp"] input[type="file"]'))||!t.files||!t.files[0])return;
- const f=t.form,file=t.files[0],tok=f._rt=(f._rt||0)+1,btn=f.querySelector('button:not([type="button"])'),t0=btn.textContent;
+// קורא מסמך ביטוח או טסט וממלא את הטופס. src: 'file' = קובץ שנבחר, 'lic' = תמונת הרישיון ששמורה ברכב (לא מצרפים אותה לתשלום)
+async function docRun(f,get,src){
+ const tok=f._rt=(f._rt||0)+1,btn=f.querySelector('button:not([type="button"])'),t0=btn.textContent,lic=src==='lic';
  const ok1=f.querySelector('.docok'),warn=f.querySelector('.docwarn'),v=byId(f.elements.vid.value);
- const other=t.name==='doc'?f.elements.doc2:f.elements.doc;if(other)other.value='';
  ok1.hidden=true;warn.hidden=true;btn.disabled=true;btn.textContent='קורא את המסמך...';
  const done=(txt,bad)=>{if(f._rt!==tok)return;btn.disabled=false;btn.textContent=t0;const el=bad?warn:ok1;el.textContent=txt;el.hidden=false;el.scrollIntoView({block:'center'})};
  let blob;
- try{blob=await prepFile(file)}catch(err){console.error(err);f._doc=null;done(fmsg(err),1);return}
+ try{blob=await get()}catch(err){console.error(err);f._doc=null;done(lic?'לא ניתן לפתוח את תמונת הרישיון. אפשר לצלם או לבחור קובץ.':fmsg(err),1);return}
  if(f._rt!==tok)return;
- f._doc=blob;
+ f._doc=lic?null:blob;
  const raw=await readInvoice(blob,'expense');
  if(f._rt!==tok)return;
- if(!raw){done('לא הצלחנו לקרוא את המסמך. המסמך יישמר עם התשלום, ואפשר למלא את הפרטים ידנית.',1);return}
+ if(!raw){done(lic?'לא הצלחנו לקרוא את תמונת הרישיון. אפשר למלא את הפרטים ידנית, או לצלם מסמך.':'לא הצלחנו לקרוא את המסמך. המסמך יישמר עם התשלום, ואפשר למלא את הפרטים ידנית.',1);return}
  const r=parseDoc(raw,v);
  if(r.kind)f.elements.kind.value=r.kind;
  if(r.date)f.elements.date.value=r.date;
@@ -1492,12 +1497,19 @@ document.addEventListener('change',async e=>{
  const w=[];
  if(r.plateBad)w.push(`מספר הרכב במסמך (${r.plate}) שונה ממספר הרכב הזה. בדקו שזה המסמך הנכון.`);
  if(!r.kind)w.push('לא זוהה אם זה ביטוח או טסט. בחרו סוג.');
- if(r.cost==null)w.push('לא מצאנו סכום. השלימו אותו.');
+ if(r.cost==null&&!lic)w.push('לא מצאנו סכום. השלימו אותו.');
  if(r.dateBad)w.push('תאריך התשלום לא ברור. בדקו אותו.');
  if(r.untilBad)w.push('תאריך התוקף לא ברור. בדקו אותו.');
  const got=[r.kind?EXP[r.kind]:'',r.cost!=null?'₪'+fmt(r.cost):'',r.until?'תוקף עד '+fd(r.until):''].filter(Boolean).join(' · ');
- if(w.length)done((got?'קראנו: '+got+'. ':'')+w.join(' '),1);
- else done('✓ קראנו את המסמך: '+got+'. בדקו שהפרטים נכונים ושמרו.',0);
+ const miss=lic&&r.cost==null?' הסכום לא מופיע ברישיון, השלימו אותו.':'';
+ const from=lic?'מרישיון הרכב':'את המסמך';
+ if(w.length)done((got?'קראנו'+(lic?' מרישיון הרכב':'')+': '+got+'. ':'')+w.join(' ')+miss,1);
+ else done('✓ קראנו '+from+': '+got+'.'+miss+' בדקו שהפרטים נכונים ושמרו.'+(lic?' התשלום יישמר בלי מסמך מצורף, הרישיון כבר שמור בכרטיס הרכב.':''),0);
+}
+document.addEventListener('change',async e=>{
+ const t=e.target;if(!(t.matches&&t.matches('form[data-f="exp"] input[type="file"]'))||!t.files||!t.files[0])return;
+ const f=t.form,file=t.files[0],other=t.name==='doc'?f.elements.doc2:f.elements.doc;if(other)other.value='';
+ await docRun(f,()=>prepFile(file),'file');
 });
 document.addEventListener('change',e=>{const t=e.target;if(t.matches&&t.matches('form[data-f="svc"] select[name="type"]')){const m=t.form.querySelector('.more');if(m)m.hidden=!t.value}});
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();instEv=e;drawInst()});
