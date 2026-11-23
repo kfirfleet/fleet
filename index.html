@@ -68,6 +68,7 @@ a.btn{text-decoration:none;display:inline-block}
 .subtabs{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto}.subtabs .tab{padding:5px 18px;font-size:14px}
 #ov{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;padding:16px;z-index:9}
 #ov.on{display:flex}#ov img{max-width:100%;max-height:100%;border-radius:6px}
+#ov .pdfv{background:var(--card);color:var(--tx);border-radius:12px;padding:22px;text-align:center;display:grid;gap:12px;max-width:320px}#ov .pdfv a{text-decoration:none;display:block}
 #ed{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;overflow-y:auto;padding:16px;z-index:9}
 #ed.on{display:block}#ed .card{max-width:480px;margin:0 auto}
 </style>
@@ -283,10 +284,10 @@ function svcForm(vid){
  <label>סוג טיפול<select name="type" required><option value="" selected disabled>בחרו סוג טיפול</option>${Object.entries(TYPES).map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}</select></label>
  <div class="more" hidden>
  <input type="hidden" name="manual" value=""><input type="hidden" name="uploaded" value="">
- <p class="note">${m?'מצלמים חשבונית והאתר ינסה לקרוא ממנה את הפרטים, או לוחצים "מילוי ידני" ומזינים בעצמכם.':'מצלמים את החשבונית, והאתר קורא ממנה לבד את התאריך, הסכום, המוסך והק"מ.'}</p>
+ <p class="note">${m?'מצלמים חשבונית או בוחרים קובץ (תמונה או PDF), והאתר ינסה לקרוא ממנו את הפרטים, או לוחצים "מילוי ידני" ומזינים בעצמכם.':'מצלמים את החשבונית או בוחרים קובץ (תמונה או PDF), והאתר קורא ממנו לבד את התאריך, הסכום, המוסך והק"מ.'}</p>
  ${m?'<button type="button" class="btn ghost sm" data-a="svcman">מילוי ידני</button>':''}
  <label>צילום חשבונית${m?' (אופציונלי)':''}<input type="file" name="receipt" accept="image/*" capture="environment"></label>
- <label>או בחירת תמונה מהגלריה<input type="file" name="receipt2" accept="image/*"></label>
+ <label>או בחירת קובץ מהמכשיר (תמונה או PDF)<input type="file" name="receipt2" accept="image/*,application/pdf,.pdf"></label>
  <p class="svcmsg warn" role="alert" hidden></p>
  <div class="manual" hidden>
  <label>תאריך<input type="date" name="date" value="${today()}"></label>
@@ -319,9 +320,9 @@ function expBox(v){
  const exs=D.exp.filter(x=>x.vehicle_id===v.id);
  return `<h2 id="sec-exp">ביטוח וטסט</h2>${expList(exs,false)}
  <details><summary>רישום תשלום ביטוח או טסט</summary><form class="form" data-f="exp" style="padding-bottom:12px"><input type="hidden" name="vid" value="${v.id}">
- <p class="note">מצלמים את המסמך (פוליסה, קבלה או רישיון רכב) והאתר ממלא לבד את הסכום והפרטים. תמיד בדקו אותם לפני השמירה. אפשר גם למלא ידנית.</p>
+ <p class="note">מצלמים את המסמך (פוליסה, קבלה או רישיון רכב) או בוחרים קובץ שנשמר במכשיר (תמונה או PDF), והאתר ממלא לבד את הסכום והפרטים. תמיד בדקו אותם לפני השמירה. אפשר גם למלא ידנית.</p>
  <label>צילום המסמך (לא חובה)<input type="file" name="doc" accept="image/*" capture="environment"></label>
- <label>או בחירת תמונה מהגלריה<input type="file" name="doc2" accept="image/*"></label>
+ <label>או בחירת קובץ מהמכשיר (תמונה או PDF)<input type="file" name="doc2" accept="image/*,application/pdf,.pdf"></label>
  <p class="note docok" hidden></p><p class="svcmsg warn docwarn" role="alert" hidden></p>
  <label>סוג<select name="kind" required>${Object.entries(EXP).map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}</select></label>
  <label>תאריך תשלום<input type="date" name="date" value="${today()}" required></label>
@@ -598,7 +599,7 @@ create trigger services_mail_invoice after insert on public.services
   for each row execute function public.mail_invoice();`;
  const sqlR3=`select status_code, content::text from net._http_response order by id desc limit 3;`;
  const kmFnCode=String.raw`// km-reminders: (1) התראות לטלפון על עדכון ק"מ (Web Push), (2) שליחת חשבוניות להנהלת החשבונות במייל,
-// (3) קריאה אוטומטית של תמונת חשבונית באמצעות Claude (תאריך, סכום, מוסך, ק"מ), וגם של מסמכי ביטוח וטסט (סכום, תאריך, תוקף).
+// (3) קריאה אוטומטית של תמונה או קובץ PDF של חשבונית באמצעות Claude (תאריך, סכום, מוסך, ק"מ), וגם של מסמכי ביטוח וטסט (סכום, תאריך, תוקף).
 // התראות לא צריכות מפתחות חיצוניים. שליחת מייל עוברת דרך סקריפט קטן ב-Gmail שלך (Google Apps Script),
 // וכתובת הסקריפט נשמרת בסוד MAIL_SCRIPT_URL. הקריאה האוטומטית צריכה סוד בשם ANTHROPIC_API_KEY.
 // חשוב: אחרי הפריסה לכבות את Verify JWT של הפונקציה (הפונקציה בודקת הרשאות בעצמה).
@@ -764,7 +765,7 @@ async function sendInvoice(admin: Admin, serviceId: string) {
 
 // ---------- קריאה אוטומטית של חשבונית (Claude) ----------
 const INVOICE_PROMPT = [
-  'This is a photo of a receipt or invoice for a vehicle service, repair, tires or parts from an Israeli business.',
+  'This is a photo or a PDF file of a receipt or invoice for a vehicle service, repair, tires or parts from an Israeli business.',
   'It is mostly in Hebrew, may be handwritten, and may show several papers (for example an invoice and a credit card slip).',
   'Dates in Israel are day/month/year.',
   'Answer with ONLY one JSON object and nothing else:',
@@ -776,12 +777,12 @@ const INVOICE_PROMPT = [
   'summary = what was done, in Hebrew, at most 60 characters, or null.',
   'Inside string values never use the double-quote character (write בע״מ with the Hebrew gershayim mark, not a plain quote). Do not use code fences.',
   'Never guess. Use null for anything that is missing or unclear.',
-  'If the image is not a receipt or an invoice, answer {"readable": false}.',
+  'If the file is not a receipt or an invoice, answer {"readable": false}.',
 ].join(' ')
 
 // מסמך ביטוח או טסט (פוליסה, קבלה, אגרת רישוי, רישיון רכב)
 const EXPENSE_PROMPT = [
-  'This is a photo of a document about a vehicle in Israel: either a vehicle insurance document (a policy, a premium payment receipt or an invoice, compulsory or comprehensive insurance),',
+  'This is a photo or a PDF file of a document about a vehicle in Israel: either a vehicle insurance document (a policy, a premium payment receipt or an invoice, compulsory or comprehensive insurance),',
   'or an annual vehicle test document (a test station receipt or invoice, an annual licence fee receipt, or the vehicle licence showing its validity date).',
   'It is mostly in Hebrew, may be handwritten, and may show several papers. Dates in Israel are day/month/year.',
   'Answer with ONLY one JSON object and nothing else:',
@@ -795,7 +796,7 @@ const EXPENSE_PROMPT = [
   'summary = a short description in Hebrew, at most 60 characters, for example the insurance type (ביטוח מקיף, ביטוח חובה) or the kind of test document, or null.',
   'Inside string values never use the double-quote character (write בע״מ with the Hebrew gershayim mark, not a plain quote). Do not use code fences.',
   'Never guess. Use null for anything that is missing or unclear.',
-  'If the image is not a vehicle insurance or test document, answer {"readable": false}.',
+  'If the file is not a vehicle insurance or test document, answer {"readable": false}.',
 ].join(' ')
 
 // מוציא את ה-JSON מתשובת המודל; אם יש בו שגיאת תחביר (למשל גרשיים בשם מוסך) שולף את השדות אחד אחד
@@ -834,8 +835,9 @@ function looseJson(t: string): Record<string, unknown> | null {
   }
 }
 
-async function readInvoice(admin: Admin, userId: string, image: unknown, doc = '') {
+async function readInvoice(admin: Admin, userId: string, image: unknown, doc = '', mime = '') {
   const expense = doc === 'expense'
+  const pdf = mime === 'application/pdf'
   // רק מנהל, או נהג שמשויך אליו רכב, יכול להשתמש בשירות (כל קריאה עולה כסף קטן)
   const { data: me } = await admin.from('profiles').select('role').eq('id', userId).maybeSingle()
   if (me?.role !== 'manager') {
@@ -846,6 +848,8 @@ async function readInvoice(admin: Admin, userId: string, image: unknown, doc = '
   if (typeof image !== 'string' || image.length < 100 || image.length > 7000000) {
     return reply({ ok: false, error: 'bad image' }, 400)
   }
+  // קובץ PDF תקין מתחיל ב-%PDF, ובקידוד base64 זה JVBER
+  if (pdf && !image.startsWith('JVBER')) return reply({ ok: false, error: 'bad image' }, 400)
   const rawKey = Deno.env.get('ANTHROPIC_API_KEY') ?? ''
   // מפתח תקין הוא תווי ASCII בלבד: זורקים רווחים, שורות חדשות ותווים בלתי נראים שנדבקו בטעות
   const key = rawKey.replace(/[^\x21-\x7E]/g, '')
@@ -872,7 +876,9 @@ async function readInvoice(admin: Admin, userId: string, image: unknown, doc = '
         messages: [{
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
+            pdf
+              ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: image } }
+              : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
             { type: 'text', text: expense ? EXPENSE_PROMPT : INVOICE_PROMPT },
           ],
         }],
@@ -947,7 +953,7 @@ Deno.serve(async (req) => {
     }
     if (mode === 'read') {
       if (!userId) return reply({ ok: false, error: 'forbidden' }, 403)
-      return await readInvoice(admin, userId, body.image, String(body.doc ?? ''))
+      return await readInvoice(admin, userId, body.image, String(body.doc ?? ''), String(body.mime ?? ''))
     }
     if (mode === 'cron' && userId) return reply({ ok: false, error: 'forbidden' }, 403)
 
@@ -1085,7 +1091,8 @@ function doPost(e) {
  <li>בדיקה של הטיימר עצמו (בלי לשלוח כלום): מריצים את הקטע הראשון, מחכים כמה שניות, ואז את השני. אמור להופיע status_code 200 ותוכן שמתחיל ב-{"ok":true. ${sqlL}${pre(sqlR1)}${pre(sqlR2)}</li>
  <li>אם מופיע 401: המתג Verify JWT עדיין דלוק (שלב 4). אם מופיע 500 עם rpc: לא הורץ שלב 2.</li></ol></details>
  <details><summary>קריאת חשבוניות אוטומטית</summary><ol>
- <li>הנהג בוחר רק סוג טיפול ומצלם את החשבונית. האתר קורא ממנה את התאריך, הסכום, שם המוסך והק"מ, ושומר לבד. אם אין ק"מ בחשבונית, נלקח הק"מ האחרון של הרכב.</li>
+ <li>הנהג בוחר רק סוג טיפול ומצלם את החשבונית (או בוחר קובץ מהמכשיר). האתר קורא ממנה את התאריך, הסכום, שם המוסך והק"מ, ושומר לבד. אם אין ק"מ בחשבונית, נלקח הק"מ האחרון של הרכב.</li>
+ <li>קובצי PDF: אפשר גם לבחור קובץ PDF שהגיע במייל ונשמר במכשיר (עד 4MB), והאתר קורא גם אותו. הקובץ נשמר עם הטיפול או התשלום, וכשנשלחת חשבונית להנהלת החשבונות היא מצורפת כ-PDF. זה דורש שקוד swift-handler מעודכן לגרסה שבמדריך (שלב 3 למטה). אם ההעלאה נכשלת עם ההודעה "האחסון לא מקבל קובצי PDF": ב-Supabase נכנסים ל-Storage ← invoices ← Edit bucket, ומכבים את ההגבלה על סוגי קבצים (Restrict allowed MIME types).</li>
  <li>אם משהו חסר או לא ברור (סכום, תאריך, או מספר רכב שונה מהרכב שנבחר), נפתחים לנהג השדות עם מה שנקרא, והוא משלים ושומר.</li>
  <li>הקריאה עולה כסף קטן (בדרך כלל אגורות בודדות לחשבונית) ועוברת דרך חשבון נפרד ב-Claude Console, לא דרך המנוי הרגיל של Claude. בלי ההגדרה הזו האתר ממשיך לעבוד, והנהג ממלא את הפרטים בעצמו.</li>
  <li>הגדרה חד-פעמית, שלב 1: נכנסים ל-Claude Console, מוסיפים קרדיט בהגדרות החיוב (Billing), ואז ב-API keys לוחצים Create key ומעתיקים את המפתח (מתחיל ב-sk-ant). הוא מוצג פעם אחת בלבד. ${L('https://platform.claude.com/settings/keys','מפתחות API')}</li>
@@ -1110,7 +1117,7 @@ function doPost(e) {
  <li>מה זה עושה: רושמים כל תשלום של ביטוח או טסט לכל רכב (תאריך וסכום). הסכומים נכנסים להוצאות השנה ולסך ההוצאות של הרכב, לצד עלות הטיפולים. רק המנהל רואה ורושם, נהגים לא רואים את זה.</li>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlX)}</li>
  <li>אחרי זה: בסקירה לוחצים על הרכב. בקטע "ביטוח וטסט" לוחצים "רישום תשלום ביטוח או טסט", בוחרים סוג, תאריך וסכום, ושומרים. אם ממלאים גם "תוקף חדש", תוקף הביטוח או הטסט של הרכב מתעדכן ולא צריך לעדכן אותו בנפרד.</li>
- <li>קריאה אוטומטית של מסמך: בטופס התשלום מצלמים את המסמך (פוליסה, קבלה, אגרת רישוי או רישיון רכב), והאתר ממלא לבד את הסוג, הסכום, תאריך התשלום, התוקף וההערה. תמיד בודקים את הפרטים לפני השמירה. המסמך נשמר עם התשלום, ואפשר לפתוח אותו מהרשימה בכפתור "מסמך". זה דורש שהקריאה האוטומטית של חשבוניות כבר מוגדרת, ושקוד swift-handler מעודכן לגרסה שבמדריך ("קריאת חשבוניות אוטומטית", שלב 3).</li>
+ <li>קריאה אוטומטית של מסמך: בטופס התשלום מצלמים את המסמך (פוליסה, קבלה, אגרת רישוי או רישיון רכב) או בוחרים קובץ שנשמר במכשיר (תמונה, או PDF שהגיע במייל), והאתר ממלא לבד את הסוג, הסכום, תאריך התשלום, התוקף וההערה. תמיד בודקים את הפרטים לפני השמירה. המסמך נשמר עם התשלום, ואפשר לפתוח אותו מהרשימה בכפתור "מסמך". זה דורש שהקריאה האוטומטית של חשבוניות כבר מוגדרת, ושקוד swift-handler מעודכן לגרסה שבמדריך ("קריאת חשבוניות אוטומטית", שלב 3).</li>
  <li>ביטוח בתשלומים: אפשר לרשום כל תשלום בנפרד (ובהערה, למשל "תשלום 1 מתוך 12"), או לרשום את הסכום השנתי כולו ביום התשלום הראשון.</li>
  <li>תיקון או מחיקה: ליד כל תשלום ברשימה יש כפתור "עריכה", ובתוכו גם "מחיקת התשלום".</li>
  <li>סיכומים: בדף הרכב "הוצאות השנה" ו"סך כל ההוצאות" כוללים טיפולים, ביטוח וטסט. בסקירה הכרטיס "הוצאות השנה" כולל את כל הצי, ולחיצה עליו מציגה את הפירוט.</li></ol></details>
@@ -1173,11 +1180,23 @@ function shrink(file,max=1600){
   img.src=u;
  });
 }
+const PDFMAX=4e6;
+const isPdf=f=>!!f&&(f.type==='application/pdf'||/\.pdf$/i.test(f.name||''));
+async function prepFile(file,max){
+ if(isPdf(file)){
+  if(file.size>PDFMAX)throw new Error('pdfbig');
+  return file.type==='application/pdf'?file:new Blob([file],{type:'application/pdf'});
+ }
+ return shrink(file,max);
+}
+const fext=b=>b&&b.type==='application/pdf'?'pdf':'jpg';
+const fmsg=e=>e&&e.message==='pdfbig'?'קובץ ה-PDF גדול מדי (עד 4MB). בחרו קובץ קטן יותר או צלמו את המסמך.':'לא ניתן לעבד את הקובץ. נסו תמונה או PDF אחרים.';
+const upMsg=(ue,blob,what)=>fext(blob)==='pdf'&&/mime|not supported/i.test(ue&&ue.message||'')?'האחסון לא מקבל קובצי PDF. ההוראות במדריך, תחת "קריאת חשבוניות אוטומטית". אפשר לצלם את המסמך במקום.':`העלאת ה${what} נכשלה, נסה שוב`;
 async function readInvoice(blob,doc){
  try{
   const image=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=no;r.readAsDataURL(blob)});
   const t=new Promise((_,no)=>setTimeout(()=>no(new Error('timeout')),45000));
-  const{data,error}=await Promise.race([sb.functions.invoke(FN_PUSH,{body:doc?{mode:'read',image,doc}:{mode:'read',image}}),t]);
+  const{data,error}=await Promise.race([sb.functions.invoke(FN_PUSH,{body:{mode:'read',image,...(doc?{doc}:{}),...(blob.type==='application/pdf'?{mime:'application/pdf'}:{})}}),t]);
   if(error||!data||!data.ok||!data.data||data.data.readable===false)return null;
   return data.data;
  }catch(e){console.error(e);return null}
@@ -1226,7 +1245,7 @@ const H={
   const rf=o.receipt&&o.receipt.size?o.receipt:(o.receipt2&&o.receipt2.size?o.receipt2:null);
   let path=o.uploaded||null,blob=null;
   if(rf){
-   try{blob=await shrink(rf)}catch(e){console.error(e);return[0,'לא ניתן לעבד את התמונה']}
+   try{blob=await prepFile(rf)}catch(e){console.error(e);return[0,fmsg(e)]}
    if(path){sb.storage.from('invoices').remove([path]).catch(()=>{});path=null;f.elements.uploaded.value=''}
   }
   if(!blob&&!path){
@@ -1235,9 +1254,9 @@ const H={
   }
   if(blob){
    f.querySelector('button:not([type="button"])').textContent='מעלה חשבונית...';
-   const p=`${o.vid}/${crypto.randomUUID()}.jpg`;
-   const{error:ue}=await sb.storage.from('invoices').upload(p,blob,{contentType:'image/jpeg'});
-   if(ue){console.error(ue);return[0,'העלאת החשבונית נכשלה, נסה שוב']}
+   const p=`${o.vid}/${crypto.randomUUID()}.${fext(blob)}`;
+   const{error:ue}=await sb.storage.from('invoices').upload(p,blob,{contentType:blob.type||'image/jpeg'});
+   if(ue){console.error(ue);return[0,upMsg(ue,blob,'חשבונית')]}
    path=p;f.elements.uploaded.value=p;f.elements.receipt.value='';f.elements.receipt2.value='';
   }
   if(!manual){
@@ -1299,9 +1318,9 @@ const H={
   const amount=+o.amount;if(!(amount>0)||amount>=1e8)return[0,'צריך למלא סכום גדול מאפס'];
   let path=null;
   if(f&&f._doc){
-   const p=`exp/${o.vid}/${crypto.randomUUID()}.jpg`;
-   const{error:ue}=await sb.storage.from('invoices').upload(p,f._doc,{contentType:'image/jpeg'});
-   if(ue){console.error(ue);return[0,'העלאת המסמך נכשלה, נסה שוב']}
+   const p=`exp/${o.vid}/${crypto.randomUUID()}.${fext(f._doc)}`;
+   const{error:ue}=await sb.storage.from('invoices').upload(p,f._doc,{contentType:f._doc.type||'image/jpeg'});
+   if(ue){console.error(ue);return[0,upMsg(ue,f._doc,'מסמך')]}
    path=p;
   }
   const row={vehicle_id:o.vid,kind:o.kind,expense_date:o.date,amount,note:(o.note||'').trim()||null};
@@ -1362,7 +1381,7 @@ document.addEventListener('click',async e=>{
  if(a==='install'&&instEv){const ev=instEv;instEv=null;ev.prompt();try{await ev.userChoice}catch(e){}drawInst()} if(a==='rc'){
   const{data,error}=await sb.storage.from('invoices').createSignedUrl(b.dataset.p,300);
   if(error){toast('לא ניתן לפתוח את הקבלה');return}
-  $('#ov').innerHTML=`<img src="${data.signedUrl}" alt="מסמך">`;$('#ov').classList.add('on');
+  $('#ov').innerHTML=/\.pdf$/i.test(b.dataset.p)?`<div class="pdfv"><b>מסמך PDF</b><a class="btn" href="${esc(data.signedUrl)}" target="_blank" rel="noopener">פתיחת המסמך</a><small>לחיצה על המסך סוגרת</small></div>`:`<img src="${data.signedUrl}" alt="מסמך">`;$('#ov').classList.add('on');
  }
  if(a==='pushon'){b.disabled=true;const[ok,msg]=await pushEnable();b.disabled=false;toast(msg);if(ok){await load(me.id);render()}}
  if(a==='pushtest'){
@@ -1458,7 +1477,7 @@ document.addEventListener('change',async e=>{
  ok1.hidden=true;warn.hidden=true;btn.disabled=true;btn.textContent='קורא את המסמך...';
  const done=(txt,bad)=>{if(f._rt!==tok)return;btn.disabled=false;btn.textContent=t0;const el=bad?warn:ok1;el.textContent=txt;el.hidden=false;el.scrollIntoView({block:'center'})};
  let blob;
- try{blob=await shrink(file)}catch(err){console.error(err);f._doc=null;done('לא ניתן לעבד את התמונה. נסו תמונה אחרת.',1);return}
+ try{blob=await prepFile(file)}catch(err){console.error(err);f._doc=null;done(fmsg(err),1);return}
  if(f._rt!==tok)return;
  f._doc=blob;
  const raw=await readInvoice(blob,'expense');
