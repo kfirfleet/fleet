@@ -34,6 +34,10 @@ small{color:var(--mut);font-size:12px}
 .b{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:500}
 .ok{background:var(--okb);color:var(--ok)}.warn{background:var(--warnb);color:var(--warn)}.bad{background:var(--badb);color:var(--bad)}
 .scroll{overflow-x:auto;padding:0}
+.repbar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.repmeta{color:var(--mut);font-size:13px;margin:0 0 8px}
+table.rep{font-size:13px}table.rep th{color:var(--tx);font-weight:700;background:var(--bg);white-space:normal;min-width:70px}table.rep th,table.rep td{border:1px solid var(--bd);padding:6px 8px}
+table.rep td.l1{color:var(--warn);font-weight:700}table.rep td.l2{color:var(--bad);font-weight:700}
+@media print{@page{size:A4 landscape;margin:10mm}header,#tabs,#instbar,#pushbar,#toast,#ov,#ed,.noprint{display:none!important}body,main{background:#fff!important;color:#000!important;padding:0!important;max-width:none!important}.card{box-shadow:none!important;border:0!important;padding:0!important}table.rep{font-size:9px}table.rep th,table.rep td{white-space:normal;padding:2px 3px;color:#000}table.rep td.l1,table.rep td.l2{color:#000}.scroll{overflow:visible!important}}
 table{width:100%;border-collapse:collapse;font-size:14px;white-space:nowrap}
 th,td{text-align:start;padding:10px 12px;border-bottom:1px solid var(--bd)}
 th{color:var(--mut);font-weight:500;font-size:12px}tr:last-child td{border:0}
@@ -338,6 +342,44 @@ function viewHist(){
  const l=ySvcs(ui.year),t=sumA(l,'cost'),ex=expYear(D.exp||[],ui.year),te=sumA(ex,'amount'),mgr=me&&me.role==='manager'&&D.exp!==null;
  return `<h2>הוצאות ב-${ui.year}</h2><div class="card"><div class="row" style="padding:0;border:0"><span><b>סה"כ ₪${fmt(t+te)}</b><br><small>טיפולים ₪${fmt(t)} (${l.length})${mgr?` · ביטוח וטסט ₪${fmt(te)} (${ex.length})`:''}</small></span><button type="button" class="btn ghost sm" data-a="allsvc">הצגת כל הטיפולים</button></div></div><h2>טיפולים</h2>${svcList(l,true,'עוד לא נרשמו טיפולים השנה')}${mgr?`<h2>ביטוח וטסט</h2>${expList(ex,true,'עוד לא נרשמו תשלומי ביטוח וטסט השנה')}`:''}${svcForm()}`;
 }
+// ---------- רשימת רכבים לביקורת (טבלה אחת לכל הצי, להדפסה ולאקסל) ----------
+const dmy=s=>{if(!s)return '';const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s));if(m)return m[3]+'/'+m[2]+'/'+m[1];const d=new Date(s);return isNaN(d)?'':String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()};
+function docState(dt){
+ if(!dt)return{t:'לא הוזן',l:1};
+ const days=Math.round((new Date(dt)-Date.now())/DAY);
+ return days<0?{t:'פג תוקף',l:2}:days<=30?{t:'פג בקרוב',l:1}:{t:'בתוקף',l:0};
+}
+const REPH=['מספר רישוי','דגם','שנה','נהג משויך','ק"מ נוכחי','עדכון ק"מ אחרון','טיפול תקופתי אחרון','ק"מ בטיפול האחרון','טיפול תקופתי הבא (ק"מ)','טיפול תקופתי הבא (עד תאריך)','מרווח טיפול','סטטוס טיפול','תוקף טסט','מצב טסט','תוקף ביטוח','מצב ביטוח'];
+// כל תא: c = הערך לקובץ, s = הטקסט במסך, l = רמת חומרה (0 תקין, 1 לתשומת לב, 2 דחוף)
+function repRows(){
+ return D.vehicles.map(v=>{
+  const sv=D.services.filter(x=>x.vehicle_id===v.id),per=sv.filter(x=>x.type==='periodic').sort((a,b)=>b.km-a.km)[0],iv=ivOf(v),st=svcStatus(v);
+  const t=[v.created_at,...(D.kmu||[]).filter(u=>u.vehicle_id===v.id).map(u=>u.created_at),...sv.map(x=>x.created_at)].filter(Boolean).map(x=>new Date(x).getTime());
+  let nd='';if(per){const d=new Date(per.service_date);d.setUTCMonth(d.getUTCMonth()+iv.months);nd=d.toISOString().slice(0,10)}
+  const te=docState(v.test_date),ie=docState(v.insurance_date),T=(c,s,l)=>({c,s:s===undefined?String(c??''):s,l:l||0});
+  const driver=(D.profiles.find(p=>p.id===v.driver_id)||{}).full_name||'לא משויך';
+  return[T(v.plate),T(v.model),T(v.year||''),T(driver),T(v.km,fmt(v.km)),
+   T(t.length?dmy(new Date(Math.max(...t)).toISOString()):''),
+   T(per?dmy(per.service_date):'',per?dmy(per.service_date):'—'),T(per?per.km:'',per?fmt(per.km):'—'),
+   T(per?per.km+iv.km:'',per?fmt(per.km+iv.km):'—'),T(dmy(nd),nd?dmy(nd):'—'),
+   T(`כל ${iv.km} ק"מ או ${iv.months} חודשים${iv.own?' (מיוחד לרכב)':''}`,`כל ${fmt(iv.km)} ק"מ או ${iv.months} חודשים${iv.own?' (מיוחד לרכב)':''}`),
+   T(st.txt,st.txt,st.lvl),
+   T(dmy(v.test_date),v.test_date?dmy(v.test_date):'—'),T(te.t,te.t,te.l),
+   T(dmy(v.insurance_date),v.insurance_date?dmy(v.insurance_date):'—'),T(ie.t,ie.t,ie.l)];
+ });
+}
+function repCsv(){
+ const cell=x=>{let t=String(x??'');if(/^[=+\-@\t\r]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"'};
+ return '﻿'+[REPH,...repRows().map(r=>r.map(c=>c.c))].map(r=>r.map(cell).join(',')).join('\r\n');
+}
+function viewReport(){
+ const rows=repRows();
+ return `<h2 style="margin-top:0">רשימת רכבים לביקורת</h2>
+ <p class="repmeta">הופקה בתאריך ${dmy(new Date().toISOString())} · ${rows.length} כלי רכב${me&&me.full_name?' · '+esc(me.full_name):''}</p>
+ <div class="repbar noprint"><button type="button" class="btn" data-a="repcsv">הורדה לאקסל (CSV)</button><button type="button" class="btn ghost" data-a="repprint">הדפסה / שמירה כ-PDF</button><button type="button" class="btn ghost" data-a="tab" data-v="dash">חזרה לסקירה</button></div>
+ ${rows.length?`<div class="card scroll"><table class="rep"><tr>${REPH.map(h=>`<th>${esc(h)}</th>`).join('')}</tr>${rows.map(r=>`<tr>${r.map(c=>`<td${c.l?` class="l${c.l}"`:''}>${esc(c.s)}</td>`).join('')}</tr>`).join('')}</table></div>`:'<div class="card">עוד לא נוספו רכבים</div>'}
+ <p class="note noprint">הקובץ נפתח באקסל כרגיל. להדפסה או לשמירה כ-PDF לוחצים על הכפתור השני ובוחרים "שמירה כ-PDF" כיעד ההדפסה.</p>`;
+}
 function viewDash(){
  const at=attention(),yr=new Date().getFullYear();
  const cost=ySvcs(yr).reduce((t,s)=>t+Number(s.cost||0),0)+sumA(expYear(D.exp||[],yr),'amount');
@@ -348,7 +390,8 @@ function viewDash(){
  const cards=D.vehicles.map(v=>{const s=svcStatus(v);return `<button type="button" class="card vcard" data-a="veh" data-id="${v.id}"><b>${esc(v.model)}</b><small>${esc(v.plate)}</small><small>${drv(v.driver_id)}</small><span class="vkm">${fmt(v.km)} ק"מ</span><span class="tags"><span class="b ${cls(s.lvl)}">${s.txt}</span>${docs(v).map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</span></button>`}).join('');
  return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><div class="card"><small>דורשים תשומת לב</small><b>${at.length}</b></div><button type="button" class="card stat-link" data-a="costyear"><small>הוצאות השנה</small><b>₪${fmt(cost)}</b><small>טיפולים, ביטוח וטסט. לחיצה לפירוט</small></button></div>
  ${instLine()}<h2>דורש תשומת לב</h2>${at.length?`<div class="card list">${rows}</div>`:'<div class="card">הכול תקין, אין התראות פתוחות</div>'}
- <h2>הצי <small>(לחיצה על רכב פותחת את כל הפרטים עליו)</small></h2>${cards?`<div class="fleet">${cards}</div>`:'<div class="card">עוד לא נוספו רכבים</div>'}`;
+ <h2>הצי <small>(לחיצה על רכב פותחת את כל הפרטים עליו)</small></h2>${cards?`<div class="fleet">${cards}</div>`:'<div class="card">עוד לא נוספו רכבים</div>'}
+ ${D.vehicles.length?'<div style="margin-top:14px"><button type="button" class="btn ghost" data-a="report">רשימת רכבים לביקורת (להדפסה ולאקסל)</button></div>':''}`;
 }
 function ivBox(v){
  const g=D.settings,iv=ivOf(v);
@@ -1154,7 +1197,7 @@ function render(){
  const tabs=m?[['dash','סקירה'],['hist','טיפולים'],['mng','ניהול'],['help','מדריך']]:[];
  $('#tabs').innerHTML=tabs.map(([k,t])=>`<button class="tab ${ui.tab===k?'on':''}" data-a="tab" data-v="${k}">${t}</button>`).join('');
  if(ui.vid&&!byId(ui.vid))ui.vid=null;
- $('#view').innerHTML=m?(ui.tab==='dash'?(ui.vid?viewVeh(byId(ui.vid)):viewDash()):ui.tab==='hist'?viewHist():ui.tab==='help'?viewHelp():viewManage()):viewDriver();
+ $('#view').innerHTML=m?(ui.tab==='dash'?(ui.vid?viewVeh(byId(ui.vid)):viewDash()):ui.tab==='hist'?viewHist():ui.tab==='help'?viewHelp():ui.tab==='rep'?viewReport():viewManage()):viewDriver();
  drawInst();drawPush();
 }
 let vh=false,skipPop=false,vy=0;
@@ -1380,6 +1423,9 @@ document.addEventListener('click',async e=>{
  if(a==='back'){closeVeh();render();window.scrollTo(0,vy)}
  if(a==='tab'){closeVeh();ui.tab=b.dataset.v;ui.year=null;const to=b.dataset.to;if(b.dataset.v==='mng'&&SUBOF[to])ui.sub=SUBOF[to];render();const t=to&&document.getElementById(to);if(t){const d=t.tagName==='DETAILS'?t:t.closest('details');if(d)d.open=true;t.scrollIntoView()}else window.scrollTo(0,0)}
  if(a==='sub'){ui.sub=b.dataset.v;render();window.scrollTo(0,0)}
+ if(a==='report'){ui.tab='rep';render();window.scrollTo(0,0)}
+ if(a==='repcsv'){const blob=new Blob([repCsv()],{type:'text/csv;charset=utf-8'}),u=URL.createObjectURL(blob),l=document.createElement('a');l.href=u;l.download='vehicles-'+today()+'.csv';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}
+ if(a==='repprint')window.print();
  if(a==='costyear'){ui.tab='hist';ui.year=new Date().getFullYear();render();window.scrollTo(0,0)}
  if(a==='allsvc'){ui.year=null;render();window.scrollTo(0,0)}
  if(a==='explic'){
