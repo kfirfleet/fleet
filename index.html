@@ -451,7 +451,10 @@ function viewManage(){
  const bar=`<div class="subtabs">${SUBS.map(([k,t])=>`<button type="button" class="tab ${sub===k?'on':''}" data-a="sub" data-v="${k}">${t}</button>`).join('')}</div>`;
  if(sub==='drv')return bar+`<h2 id="sec-drivers" style="margin-top:0">נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>${installBox()}${pushBox()}`;
  if(sub==='set')return bar+`<form id="sec-rules" class="card form" data-f="rules"><h3>כללי תזכורת לטיפול תקופתי</h3><label>כל כמה ק"מ<input type="number" name="km" value="${D.settings.service_interval_km}" min="1000" required></label><label>או כל כמה חודשים<input type="number" name="months" value="${D.settings.service_interval_months}" min="1" required></label><small>זה המרווח לכל הרכבים. לרכב שצריך מרווח אחר: בסקירה לוחצים על הרכב ובשורה "מרווח טיפול" קובעים לו מרווח משלו.</small><button class="btn">עדכון כללים</button></form>${mailBox()}`;
- return bar+`<details id="sec-veh"><summary>הוספת רכב חדש</summary><form class="form" data-f="veh" style="padding-bottom:12px"><label>מספר רישוי<input name="plate" required></label><label>דגם<input name="model" required></label><label>שנה<input type="number" name="year" min="1990" max="2035"></label>
+ return bar+`<details id="sec-veh"><summary>הוספת רכב חדש</summary><form class="form" data-f="veh" style="padding-bottom:12px">${D.vehicles.length&&!('license_path' in D.vehicles[0])?'':`<p class="note">מצלמים את רישיון הרכב או בוחרים קובץ (תמונה או PDF), והאתר ממלא לבד מספר רישוי, דגם, שנה ותוקף טסט, ושומר את הרישיון בכרטיס הרכב. תמיד בדקו את הפרטים לפני השמירה. אפשר גם למלא ידנית.</p>
+ <label>צילום רישיון הרכב (לא חובה)<input type="file" name="lic" accept="image/*" capture="environment"></label>
+ <label>או בחירת קובץ מהמכשיר (תמונה או PDF)<input type="file" name="lic2" accept="image/*,application/pdf,.pdf"></label>
+ <div class="docok" hidden></div><div class="docwarn" hidden></div>`}<label>מספר רישוי<input name="plate" required></label><label>דגם<input name="model" required></label><label>שנה<input type="number" name="year" min="1990" max="2035"></label>
  <label>נהג<select name="driverId">${opts('')}</select></label>
  <label>ק"מ נוכחי<input type="number" name="km" min="0" required></label><label>תוקף טסט<input type="date" name="test"></label><label>תוקף ביטוח<input type="date" name="ins"></label><button class="btn">הוספת רכב</button></form></details>
  <h2 id="sec-assign">שיוך נהגים לרכבים</h2><div class="card list">${D.vehicles.map(v=>`<div class="row"><span>${vname(v)}</span><select data-assign="${v.id}">${opts(v.driver_id)}</select></div>`).join('')||'עוד אין רכבים'}</div>
@@ -646,7 +649,7 @@ create trigger services_mail_invoice after insert on public.services
   for each row execute function public.mail_invoice();`;
  const sqlR3=`select status_code, content::text from net._http_response order by id desc limit 3;`;
  const kmFnCode=String.raw`// km-reminders: (1) התראות לטלפון על עדכון ק"מ (Web Push), (2) שליחת חשבוניות להנהלת החשבונות במייל,
-// (3) קריאה אוטומטית של תמונה או קובץ PDF של חשבונית באמצעות Claude (תאריך, סכום, מוסך, ק"מ), וגם של מסמכי ביטוח וטסט (סכום, תאריך, תוקף).
+// (3) קריאה אוטומטית של תמונה או קובץ PDF של חשבונית באמצעות Claude (תאריך, סכום, מוסך, ק"מ), וגם של מסמכי ביטוח וטסט (סכום, תאריך, תוקף) ושל רישיון רכב (מספר, דגם, שנה, תוקף).
 // התראות לא צריכות מפתחות חיצוניים. שליחת מייל עוברת דרך סקריפט קטן ב-Gmail שלך (Google Apps Script),
 // וכתובת הסקריפט נשמרת בסוד MAIL_SCRIPT_URL. הקריאה האוטומטית צריכה סוד בשם ANTHROPIC_API_KEY.
 // חשוב: אחרי הפריסה לכבות את Verify JWT של הפונקציה (הפונקציה בודקת הרשאות בעצמה).
@@ -846,6 +849,21 @@ const EXPENSE_PROMPT = [
   'If the file is not a vehicle insurance or test document, answer {"readable": false}.',
 ].join(' ')
 
+// רישיון רכב (להוספת רכב חדש לפי צילום הרישיון)
+const LICENSE_PROMPT = [
+  'This is a photo or a PDF file of an Israeli vehicle licence (רישיון רכב): the document that shows the vehicle registration details and the date until which the licence is valid.',
+  'It is in Hebrew, may be photographed at an angle, and may be a digital copy. Dates in Israel are day/month/year.',
+  'Answer with ONLY one JSON object and nothing else:',
+  '{"readable": true or false, "plate": string or null, "model": string or null, "year": number or null, "until": "YYYY-MM-DD" or null}',
+  'plate = the vehicle registration number (מספר רישוי), digits only, 5 to 8 digits.',
+  'model = the manufacturer (תוצר) and the commercial name (כינוי מסחרי) together, in Hebrew when it is written in Hebrew, for example "סקודה אוקטביה" or "יונדאי איוניק 6", at most 40 characters. Do not add the engine size, the trim level or the word "דגם".',
+  'year = the year of manufacture (שנת ייצור) as a four digit number.',
+  'until = the date until which the licence is valid (תוקף רישיון עד), which is also the date of the next annual test.',
+  'Inside string values never use the double-quote character. Do not use code fences.',
+  'Never guess. Use null for anything that is missing or unclear.',
+  'If the file is not a vehicle licence, answer {"readable": false}.',
+].join(' ')
+
 // מוציא את ה-JSON מתשובת המודל; אם יש בו שגיאת תחביר (למשל גרשיים בשם מוסך) שולף את השדות אחד אחד
 function looseJson(t: string): Record<string, unknown> | null {
   const a = t.indexOf('{')
@@ -879,16 +897,19 @@ function looseJson(t: string): Record<string, unknown> | null {
     kind: (s.match(/"kind"\s*:\s*"(insurance|test|other)"/) ?? [])[1] ?? null,
     until: (s.match(/"until"\s*:\s*"(\d{4}-\d{2}-\d{2})"/) ?? [])[1] ?? null,
     issuer: str('issuer', ',\\s*"summary"'),
+    year: num('year'),
+    model: str('model', ',\\s*"year"'),
   }
 }
 
 async function readInvoice(admin: Admin, userId: string, image: unknown, doc = '', mime = '') {
   const expense = doc === 'expense'
+  const license = doc === 'license'
   const pdf = mime === 'application/pdf'
   // רק מנהל, או נהג שמשויך אליו רכב, יכול להשתמש בשירות (כל קריאה עולה כסף קטן)
   const { data: me } = await admin.from('profiles').select('role').eq('id', userId).maybeSingle()
   if (me?.role !== 'manager') {
-    if (expense) return reply({ ok: false, error: 'forbidden' }, 403)
+    if (expense || license) return reply({ ok: false, error: 'forbidden' }, 403)
     const { data: own } = await admin.from('vehicles').select('id').eq('driver_id', userId).limit(1)
     if (!own || own.length === 0) return reply({ ok: false, error: 'forbidden' }, 403)
   }
@@ -926,7 +947,7 @@ async function readInvoice(admin: Admin, userId: string, image: unknown, doc = '
             pdf
               ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: image } }
               : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
-            { type: 'text', text: expense ? EXPENSE_PROMPT : INVOICE_PROMPT },
+            { type: 'text', text: expense ? EXPENSE_PROMPT : license ? LICENSE_PROMPT : INVOICE_PROMPT },
           ],
         }],
       }),
@@ -1177,6 +1198,7 @@ function doPost(e) {
  <details><summary>רישיון רכב</summary><ol>
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlC)}</li>
  <li>אחרי זה: ניהול ← רכבים ← רישיון רכב. ליד כל רכב לוחצים "העלאה", ומצלמים את הרישיון או בוחרים תמונה מהגלריה. ${go('mng','sec-lic','מעבר לרישיון רכב')}</li>
+ <li>הוספת רכב חדש לפי רישיון: ב-ניהול ← רכבים ← "הוספת רכב חדש" מצלמים את הרישיון או בוחרים קובץ (תמונה או PDF), והאתר ממלא מספר רישוי, דגם, שנה ותוקף טסט, ושומר את הרישיון בכרטיס הרכב. ק"מ נוכחי ונהג ממלאים ידנית. זה דורש את הקוד העדכני של swift-handler (קטע "התראות על עדכון ק"מ", שלב 3) ואת הסוד ANTHROPIC_API_KEY.</li>
  <li>כשמתקבל רישיון חדש (למשל אחרי טסט שנתי) לוחצים "החלפה". התמונה הקודמת נמחקת.</li>
  <li>לצפייה לוחצים "צפייה". הרישיון מוצג רק למנהל.</li>
  <li>רק אם ההעלאה נכשלת: מריצים גם את הקטע הבא ומנסים שוב. ${sqlL}${pre(sqlD)}</li></ol></details>
@@ -1392,7 +1414,18 @@ const H={
   $('#ed').classList.remove('on');
   return[1,'התשלום עודכן']
  },
- async veh(o){const{error}=await sb.from('vehicles').insert({plate:o.plate.trim(),model:o.model.trim(),year:num(o.year),driver_id:o.driverId||null,km:+o.km,test_date:o.test||null,insurance_date:o.ins||null});return res(error,'הרכב נוסף')},
+ async veh(o,f){
+   const{data,error}=await sb.from('vehicles').insert({plate:o.plate.trim(),model:o.model.trim(),year:num(o.year),driver_id:o.driverId||null,km:+o.km,test_date:o.test||null,insurance_date:o.ins||null}).select('id').maybeSingle();
+   if(error)return res(error,'הרכב נוסף');
+   const lic=f&&f._lic;if(!lic)return[1,'הרכב נוסף'];
+   if(!data||!data.id)return[1,'הרכב נוסף. את הרישיון אפשר להעלות בכרטיס "רישיון רכב"'];
+   const path=`${data.id}/license-${crypto.randomUUID()}.${fext(lic)}`;
+   const{error:ue}=await sb.storage.from('invoices').upload(path,lic,{contentType:lic.type||'image/jpeg'});
+   if(ue){console.error(ue);return[1,'הרכב נוסף, אבל העלאת הרישיון נכשלה. אפשר להעלות אותו ב"רישיון רכב"']}
+   const{error:le}=await sb.from('vehicles').update({license_path:path,license_at:new Date().toISOString()}).eq('id',data.id);
+   if(le){console.error(le);await sb.storage.from('invoices').remove([path]);return[1,'הרכב נוסף, אבל שמירת הרישיון נכשלה. ההוראות במדריך, תחת "רישיון רכב"']}
+   return[1,'הרכב נוסף והרישיון נשמר'];
+  },
  async kmfix(o){
   const v=byId(o.vid),k=+o.km;if(!v)return[0,'הרכב לא נמצא'];
   if(k>v.km+100000)return[0,'הקילומטראז\' גבוה מדי, בדוק שוב'];
@@ -1523,6 +1556,46 @@ document.addEventListener('change',async e=>{
  if(error){console.error(error);await sb.storage.from('invoices').remove([path]);toast((error.message||'').includes('license_')?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "רישיון רכב"':'השמירה נכשלה, נסה שוב');return}
  if(old){try{await sb.storage.from('invoices').remove([old])}catch(err){console.error(err)}}
  await load(me.id);render();toast('הרישיון נשמר');
+});
+// רישיון רכב: מנקה ובודק את מה שהמודל קרא
+function parseLic(d){
+ const plate=String(d.plate||'').replace(/\D/g,'');
+ const y=Number(d.year);
+ let until=null,untilBad=false;
+ if(d.until){
+  const lo=new Date(Date.now()-60*DAY).toISOString().slice(0,10),hi=new Date(Date.now()+2200*DAY).toISOString().slice(0,10);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(d.until)&&Date.parse(d.until)&&d.until>=lo&&d.until<=hi)until=d.until;else untilBad=true;
+ }
+ return{plate:plate.length>=5&&plate.length<=8?plate:'',model:String(d.model||'').replace(/\s+/g,' ').trim().slice(0,60),year:Number.isInteger(y)&&y>=1950&&y<=new Date().getFullYear()+1?y:null,until,untilBad};
+}
+document.addEventListener('change',async e=>{
+ const t=e.target;if(!(t.matches&&t.matches('form[data-f="veh"] input[type="file"]'))||!t.files||!t.files[0])return;
+ const f=t.form,file=t.files[0],other=t.name==='lic'?f.elements.lic2:f.elements.lic;if(other)other.value='';
+ const tok=f._rt=(f._rt||0)+1,btn=f.querySelector('button:not([type="button"])'),t0=btn.textContent;
+ const ok1=f.querySelector('.docok'),warn=f.querySelector('.docwarn');
+ ok1.hidden=true;warn.hidden=true;btn.disabled=true;btn.textContent='קורא את הרישיון...';
+ const done=(txt,bad)=>{if(f._rt!==tok)return;btn.disabled=false;btn.textContent=t0;const el=bad?warn:ok1;el.textContent=txt;el.hidden=false;el.scrollIntoView({block:'center'})};
+ let blob;
+ try{blob=await prepFile(file,2200)}catch(err){console.error(err);f._lic=null;done(fmsg(err),1);return}
+ if(f._rt!==tok)return;
+ f._lic=blob;
+ const raw=await readInvoice(blob,'license');
+ if(f._rt!==tok)return;
+ if(!raw){done('לא הצלחנו לקרוא את הרישיון. הרישיון יישמר עם הרכב, ואפשר למלא את הפרטים ידנית.',1);return}
+ const r=parseLic(raw);
+ if(r.plate)f.elements.plate.value=r.plate;
+ if(r.model)f.elements.model.value=r.model;
+ if(r.year)f.elements.year.value=r.year;
+ if(r.until)f.elements.test.value=r.until;
+ const w=[];
+ if(!r.plate)w.push('לא זוהה מספר רישוי. הזינו אותו.');
+ else if(D.vehicles.some(x=>String(x.plate).replace(/\D/g,'')===r.plate))w.push('רכב עם מספר הרישוי הזה כבר קיים ברשימה.');
+ if(!r.model)w.push('לא זוהה דגם. הזינו אותו.');
+ if(r.untilBad)w.push('תאריך התוקף לא ברור. בדקו אותו.');
+ const got=[r.plate,r.model,r.year,r.until?'טסט עד '+fd(r.until):''].filter(Boolean).join(' · ');
+ const tail=' השלימו ק"מ נוכחי ובחרו נהג, והרישיון יישמר בכרטיס הרכב.';
+ if(w.length)done((got?'קראנו: '+got+'. ':'')+w.join(' ')+tail,1);
+ else done('✓ קראנו מהרישיון: '+got+'. בדקו שהפרטים נכונים.'+tail,0);
 });
 // קורא מסמך ביטוח או טסט וממלא את הטופס. src: 'file' = קובץ שנבחר, 'lic' = תמונת הרישיון ששמורה ברכב (לא מצרפים אותה לתשלום)
 async function docRun(f,get,src){
