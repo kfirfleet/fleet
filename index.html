@@ -326,6 +326,26 @@ function expYr(x){
  return new Date((a.getTime()+b.getTime())/2).getUTCFullYear();
 }
 const expYear=(l,y)=>l.filter(x=>expYr(x)===y);
+// תשלומים בלי תקופה שתוקף הרכב ("ביטוח עד" / "טסט עד") מראה שהם מכסים שנה אחרת משנת התשלום.
+// הנחה: התשלום כיסה שנה שלמה שנגמרת בתוקף הרכב, והתוקף חל עד 400 יום אחרי התשלום.
+function guessPeriods(){
+ if(!D.exp||!D.exp.length||!('period_end' in D.exp[0]))return[];
+ const out=[];
+ for(const x of D.exp){
+  if(x.period_start||x.period_end)continue;
+  const v=byId(x.vehicle_id);if(!v)continue;
+  const V=x.kind==='insurance'?v.insurance_date:v.test_date;if(!V)continue;
+  const d=(Date.parse(V)-Date.parse(x.expense_date))/DAY;
+  if(!(d>=0&&d<=400))continue;
+  const y2=expYr({expense_date:x.expense_date,period_end:V});
+  if(y2!==new Date(x.expense_date).getFullYear())out.push({x,end:V,year:y2});
+ }
+ return out;
+}
+function guessCard(){
+ const g=guessPeriods();if(!g.length)return '';
+ return `<h2>תשלומים שאולי שייכים לשנה אחרת</h2><div class="card"><small>תוקף הביטוח או הטסט של הרכב נגמר כשנה אחרי התשלום, ולכן התשלומים האלה כנראה מכסים שנה אחרת מתאריך התשלום. סמנו את מה שנכון ולחצו "עדכון תקופות". הסכומים לא משתנים, רק השנה שאליה הם נספרים.</small><div style="margin-top:8px">${g.map(c=>`<label class="row" style="gap:10px;flex-wrap:nowrap;justify-content:flex-start"><input type="checkbox" data-g="${esc(c.x.id)}" data-end="${esc(c.end)}" checked style="flex:none;min-width:0;width:22px;height:22px"><span>${EXP[c.x.kind]||esc(c.x.kind)} · ${vname(byId(c.x.vehicle_id))}<br><small>שולם ${fd(c.x.expense_date)} · בתוקף עד ${fd(c.end)} · ייספר ל-${c.year} · ₪${fmt(c.x.amount)}</small></span></label>`).join('')}</div><button type="button" class="btn" data-a="guessper" style="margin-top:10px">עדכון תקופות</button></div>`;
+}
 const perTxt=x=>x.period_start&&x.period_end?`${fd(x.period_start)}–${fd(x.period_end)}`:x.period_end?'עד '+fd(x.period_end):x.period_start?'מ-'+fd(x.period_start):'';
 const sumA=(l,k)=>l.reduce((t,x)=>t+Number(x[k]||0),0);
 function expList(l,showVeh,empty){
@@ -353,7 +373,7 @@ function expBox(v){
 function viewHist(){
  if(!ui.year)return svcForm()+'<h2>כל הטיפולים</h2>'+svcTable(D.services);
  const l=ySvcs(ui.year),t=sumA(l,'cost'),ex=expYear(D.exp||[],ui.year),te=sumA(ex,'amount'),mgr=me&&me.role==='manager'&&D.exp!==null,exI=ex.filter(x=>x.kind==='insurance'),exT=ex.filter(x=>x.kind==='test');
- return `<h2>הוצאות ב-${ui.year}</h2><div class="card"><div class="row" style="padding:0;border:0"><span><b>סה"כ ₪${fmt(t+te)}</b><br><small>טיפולים ₪${fmt(t)} (${l.length})${mgr?` · ביטוח ₪${fmt(sumA(exI,'amount'))} (${exI.length}) · טסט ₪${fmt(sumA(exT,'amount'))} (${exT.length})`:''}</small></span><button type="button" class="btn ghost sm" data-a="allsvc">הצגת כל הטיפולים</button></div></div><h2>טיפולים</h2>${svcList(l,true,'עוד לא נרשמו טיפולים השנה')}${mgr?`<h2>ביטוח</h2>${expList(exI,true,'עוד לא נרשמו תשלומי ביטוח השנה')}<h2>טסט</h2>${expList(exT,true,'עוד לא נרשמו תשלומי טסט השנה')}`:''}${svcForm()}`;
+ return `<h2>הוצאות ב-${ui.year}</h2><div class="card"><div class="row" style="padding:0;border:0"><span><b>סה"כ ₪${fmt(t+te)}</b><br><small>טיפולים ₪${fmt(t)} (${l.length})${mgr?` · ביטוח ₪${fmt(sumA(exI,'amount'))} (${exI.length}) · טסט ₪${fmt(sumA(exT,'amount'))} (${exT.length})`:''}</small></span><button type="button" class="btn ghost sm" data-a="allsvc">הצגת כל הטיפולים</button></div></div>${mgr?guessCard():''}<h2>טיפולים</h2>${svcList(l,true,'עוד לא נרשמו טיפולים השנה')}${mgr?`<h2>ביטוח</h2>${expList(exI,true,'עוד לא נרשמו תשלומי ביטוח השנה')}<h2>טסט</h2>${expList(exT,true,'עוד לא נרשמו תשלומי טסט השנה')}`:''}${svcForm()}`;
 }
 // ---------- רשימת רכבים לביקורת (טבלה אחת לכל הצי, להדפסה ולאקסל) ----------
 const dmy=s=>{if(!s)return '';const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s));if(m)return m[3]+'/'+m[2]+'/'+m[1];const d=new Date(s);return isNaN(d)?'':String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()};
@@ -395,13 +415,13 @@ function viewReport(){
 }
 function viewDash(){
  const at=attention(),yr=new Date().getFullYear();
- const yE=expYear(D.exp||[],yr),yS=sumA(ySvcs(yr),'cost'),yI=sumA(yE.filter(x=>x.kind==='insurance'),'amount'),yT=sumA(yE.filter(x=>x.kind==='test'),'amount'),cost=yS+sumA(yE,'amount');
+ const gN=guessPeriods().length,yE=expYear(D.exp||[],yr),yS=sumA(ySvcs(yr),'cost'),yI=sumA(yE.filter(x=>x.kind==='insurance'),'amount'),yT=sumA(yE.filter(x=>x.kind==='test'),'amount'),cost=yS+sumA(yE,'amount');
  const dr=id=>D.profiles.find(p=>p.id===id)||{};
  const rows=at.map(x=>{
   const p=dr(x.v.driver_id),w=x.stale&&p.phone?waLink(p.phone,p.full_name||''):'';
   return `<div class="row"><button type="button" class="rowlink" data-a="veh" data-id="${x.v.id}"><b>${vname(x.v)}</b><small>${drv(x.v.driver_id)}</small></button><span class="tags">${x.items.map(i=>`<span class="b ${cls(i.lvl)}">${i.txt}</span>`).join('')}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת</a>`:''}</span></div>`}).join('');
  const cards=D.vehicles.map(v=>{const s=svcStatus(v);return `<button type="button" class="card vcard" data-a="veh" data-id="${v.id}"><b>${esc(v.model)}</b><small>${esc(v.plate)}</small><small>${drv(v.driver_id)}</small><span class="vkm">${fmt(v.km)} ק"מ</span><span class="tags"><span class="b ${cls(s.lvl)}">${s.txt}</span>${docs(v).map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</span></button>`}).join('');
- return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><div class="card"><small>דורשים תשומת לב</small><b>${at.length}</b></div><button type="button" class="card stat-link" data-a="costyear" style="grid-column:1/-1"><small>הוצאות השנה</small><b>₪${fmt(cost)}</b><small>טיפולים ₪${fmt(yS)}${D.exp!==null?` · ביטוח ₪${fmt(yI)} · טסט ₪${fmt(yT)}`:''}<br>לחיצה לפירוט</small></button></div>
+ return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><div class="card"><small>דורשים תשומת לב</small><b>${at.length}</b></div><button type="button" class="card stat-link" data-a="costyear" style="grid-column:1/-1"><small>הוצאות השנה</small><b>₪${fmt(cost)}</b><small>טיפולים ₪${fmt(yS)}${D.exp!==null?` · ביטוח ₪${fmt(yI)} · טסט ₪${fmt(yT)}`:''}${gN?`<br>${gN===1?'תשלום אחד ממתין':gN+' תשלומים ממתינים'} לבדיקה`:''}<br>לחיצה לפירוט</small></button></div>
  ${instLine()}<h2>דורש תשומת לב</h2>${at.length?`<div class="card list">${rows}</div>`:'<div class="card">הכול תקין, אין התראות פתוחות</div>'}
  <h2>הצי <small>(לחיצה על רכב פותחת את כל הפרטים עליו)</small></h2>${cards?`<div class="fleet">${cards}</div>`:'<div class="card">עוד לא נוספו רכבים</div>'}
  ${D.vehicles.length?'<div style="margin-top:14px"><button type="button" class="btn ghost" data-a="report">רשימת רכבים לביקורת (להדפסה ולאקסל)</button></div>':''}`;
@@ -1216,6 +1236,7 @@ function doPost(e) {
  <li>אחרי זה: בסקירה לוחצים על הרכב. בקטע "ביטוח וטסט" לוחצים "רישום תשלום ביטוח או טסט", בוחרים סוג, תאריך וסכום, ושומרים. אם ממלאים גם "תוקף חדש", תוקף הביטוח או הטסט של הרכב מתעדכן ולא צריך לעדכן אותו בנפרד.</li>
  <li>קריאה אוטומטית של מסמך: בטופס התשלום מצלמים את המסמך (פוליסה, קבלה, אגרת רישוי או רישיון רכב) או בוחרים קובץ שנשמר במכשיר (תמונה, או PDF שהגיע במייל), והאתר ממלא לבד את הסוג, הסכום, תאריך התשלום, התוקף וההערה. תמיד בודקים את הפרטים לפני השמירה. המסמך נשמר עם התשלום, ואפשר לפתוח אותו מהרשימה בכפתור "מסמך". אם כבר הועלה צילום רישיון לרכב (ניהול ← רכבים ← רישיון רכב), יש בטופס גם כפתור "קריאה מרישיון הרכב ששמור במערכת", שקורא ממנו את התוקף (ואת הסכום, אם מופיע) בלי להעלות שוב. במקרה כזה התשלום נשמר בלי מסמך מצורף. זה דורש שהקריאה האוטומטית של חשבוניות כבר מוגדרת, ושקוד swift-handler מעודכן לגרסה שבמדריך ("קריאת חשבוניות אוטומטית", שלב 3).</li>
  <li>תקופת הביטוח: בטופס התשלום ממלאים "תחילת התקופה" ו"סוף התקופה" (התקופה שהתשלום מכסה). התקופה מוצגת ברשימה. ההוצאה נספרת לשנה שבה נמצאת רוב התקופה, כך שביטוח מ-15.12.2025 עד 14.12.2026 נספר ל-2026. בלי תקופה, ההוצאה נספרת לפי תאריך התשלום. אם ההוצאה נספרת לשנה אחרת מתאריך התשלום, ברשימה מופיע "נספר ל-...". אם רושמים רק סוף תקופה, נחשבת שנה שלמה שנגמרת בו. לתשלומים שכבר נרשמו אפשר להוסיף תקופה בכפתור "עריכה". אם מופיעה הודעה שצריך להריץ פקודה, מריצים שוב את הקטע שבצעד "פעם אחת בלבד" למעלה (הוא בטוח להרצה חוזרת).</li>
+ <li>מילוי תקופות אוטומטי לתשלומים ישנים: בסקירה לוחצים על "הוצאות השנה". אם האתר מזהה תשלום שנרשם בשנה קודמת ותוקף הביטוח או הטסט של הרכב מראה שהוא מכסה את השנה (למשל ביטוח ששולם בדצמבר), מופיעה רשימה "תשלומים שאולי שייכים לשנה אחרת". מסמנים את מה שנכון ולוחצים "עדכון תקופות". הסכומים לא משתנים, רק השנה שאליה הם נספרים.</li>
  <li>ביטוח בתשלומים: אפשר לרשום כל תשלום בנפרד (ובהערה, למשל "תשלום 1 מתוך 12"), או לרשום את הסכום השנתי כולו ביום התשלום הראשון.</li>
  <li>תיקון או מחיקה: ליד כל תשלום ברשימה יש כפתור "עריכה", ובתוכו גם "מחיקת התשלום".</li>
  <li>סיכומים: בדף הרכב "הוצאות השנה" ו"סך כל ההוצאות" כוללים טיפולים, ביטוח וטסט. בסקירה הכרטיס "הוצאות השנה" כולל את כל הצי, ולחיצה עליו מציגה את הפירוט.</li></ol></details>
@@ -1495,6 +1516,18 @@ document.addEventListener('click',async e=>{
  const b=e.target.closest('[data-a]');if(!b)return;
  const a=b.dataset.a;
  if(a==='veh')openVeh(b.dataset.id);
+ if(a==='guessper'){
+  if(!me||me.role!=='manager')return;
+  const picked=[...document.querySelectorAll('input[data-g]:checked')];
+  if(!picked.length){toast('לא סומן אף תשלום');return}
+  b.disabled=true;let n=0,bad=0;
+  for(const c of picked){
+   const{data,error}=await sb.from('vehicle_expenses').update({period_end:c.dataset.end}).eq('id',c.dataset.g).select('id');
+   if(error||!data||!data.length){console.error(error);bad++}else n++;
+  }
+  b.disabled=false;await load(me.id);render();
+  toast(bad?`עודכנו ${n} תשלומים. ${bad} לא נשמרו, נסה שוב`:n===1?'עודכן תשלום אחד':`עודכנו ${n} תשלומים`,3500);
+ }
  if(a==='ctrdel'){
   const v=byId(b.dataset.id);if(!v||!v.contract_path||!me||me.role!=='manager')return;
   if(!confirm('למחוק את חוזה הליסינג של הרכב?'))return;
