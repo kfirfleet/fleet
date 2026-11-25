@@ -131,7 +131,13 @@ function showLogin(){
 const ivOf=v=>({km:v.service_interval_km||D.settings.service_interval_km,months:v.service_interval_months||D.settings.service_interval_months,own:!!(v.service_interval_km||v.service_interval_months)});
 function svcStatus(v){
  const last=D.services.filter(s=>s.vehicle_id===v.id&&s.type==='periodic').sort((a,b)=>b.km-a.km)[0];
- if(!last)return{lvl:1,txt:'אין טיפול תקופתי רשום'};
+ if(!last){
+  // אין טיפול רשום: הערכה לפי מרווח הטיפול (הטיפול הבא במכפלה הבאה של המרווח), עד שנרשם טיפול
+  const k=ivOf(v).km,plain='אין טיפול תקופתי רשום';
+  if(!(k>0)||!(v.km>=0))return{lvl:1,txt:plain,plain};
+  const left=(k-v.km%k)%k;
+  return{lvl:1,plain,est:true,txt:left===0?'אין טיפול רשום. לפי המרווח, הגיע הזמן לטיפול':`אין טיפול רשום. לפי המרווח, טיפול בעוד כ-${fmt(left)} ק"מ`};
+ }
  const iv=ivOf(v);
  const left=last.km+iv.km-v.km;
  const due=new Date(last.service_date);due.setMonth(due.getMonth()+iv.months);
@@ -396,7 +402,7 @@ function repRows(){
    T(per?dmy(per.service_date):'',per?dmy(per.service_date):'—'),T(per?per.km:'',per?fmt(per.km):'—'),
    T(per?per.km+iv.km:'',per?fmt(per.km+iv.km):'—'),T(dmy(nd),nd?dmy(nd):'—'),
    T(`כל ${iv.km} ק"מ או ${iv.months} חודשים${iv.own?' (מיוחד לרכב)':''}`,`כל ${fmt(iv.km)} ק"מ או ${iv.months} חודשים${iv.own?' (מיוחד לרכב)':''}`),
-   T(st.txt,st.txt,st.lvl),
+   T(st.plain||st.txt,st.plain||st.txt,st.lvl),
    T(dmy(v.test_date),v.test_date?dmy(v.test_date):'—'),T(te.t,te.t,te.l),
    T(dmy(v.insurance_date),v.insurance_date?dmy(v.insurance_date):'—'),T(ie.t,ie.t,ie.l)];
  });
