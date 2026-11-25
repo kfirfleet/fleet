@@ -70,6 +70,7 @@ a.btn{text-decoration:none;display:inline-block}
 .rowlink{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:start;cursor:pointer;display:grid;gap:2px}
 .instline{display:block;width:100%;margin-bottom:12px}
 .subtabs{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto}.subtabs .tab{padding:5px 18px;font-size:14px}
+.vpick{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto}.vpick .tab{padding:5px 18px;font-size:14px}
 #ov{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;padding:16px;z-index:9}
 #ov.on{display:flex}#ov img{max-width:100%;max-height:100%;border-radius:6px}
 #ov .pdfv{background:var(--card);color:var(--tx);border-radius:12px;padding:22px;text-align:center;display:grid;gap:12px;max-width:320px}#ov .pdfv a{text-decoration:none;display:block}
@@ -462,11 +463,14 @@ function viewManage(){
  <details id="sec-kmfix" style="margin-top:12px"><summary>עריכת ק"מ לרכב</summary><form class="form" data-f="kmfix" style="padding-bottom:12px"><label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)} · ${fmt(v.km)} ק"מ</option>`).join('')}</select></label><label>ק"מ חדש<input type="number" name="km" min="0" required></label><button class="btn">עדכון ק"מ</button></form></details>`;
 }
 function viewDriver(){
- const v=D.vehicles[0];
+ const v=D.vehicles.find(x=>x.id===ui.dvid)||D.vehicles[0];
  if(!v)return '<div class="card">עדיין לא שויך אליך רכב. פנה למנהל.</div>';
  const s=svcStatus(v),dc=docs(v),age=kmAge(v);
  const digits=String(v.km).padStart(6,'0').split('').map(c=>`<i>${c}</i>`).join('');
- return `${age>=REM_DAYS?`<div class="card remind"><b>הגיע הזמן לעדכן ק"מ</b><br><small>עברו ${age} ימים מהעדכון האחרון. אפשר לעדכן בטופס למטה.</small></div>`:''}<div class="card"><h3>${vname(v)}</h3><small>שנה ${v.year||'—'} · טסט עד ${fd(v.test_date)} · ביטוח עד ${fd(v.insurance_date)}</small>
+ const many=D.vehicles.length>1;
+ const pick=many?`<div class="vpick">${D.vehicles.map(x=>`<button type="button" class="tab ${x.id===v.id?'on':''}" data-a="dveh" data-id="${x.id}">${vname(x)}</button>`).join('')}</div>`:'';
+ const more=many?D.vehicles.filter(x=>x.id!==v.id&&kmAge(x)>=REM_DAYS).map(x=>`<div class="card remind"><b>גם ב-${vname(x)} הגיע הזמן לעדכן ק"מ</b><br><button type="button" class="btn sm" data-a="dveh" data-id="${x.id}">מעבר לרכב</button></div>`).join(''):'';
+ return `${pick}${age>=REM_DAYS?`<div class="card remind"><b>הגיע הזמן לעדכן ק"מ</b><br><small>עברו ${age} ימים מהעדכון האחרון. אפשר לעדכן בטופס למטה.</small></div>`:''}${more}<div class="card"><h3>${vname(v)}</h3><small>שנה ${v.year||'—'} · טסט עד ${fd(v.test_date)} · ביטוח עד ${fd(v.insurance_date)}</small>
  <div class="odo">${digits}<small>ק"מ</small></div>
  <div class="tags"><span class="b ${cls(s.lvl)}">${s.txt}</span>${dc.map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</div></div>
  <form class="card form" data-f="km"><input type="hidden" name="vid" value="${v.id}"><h3>עדכון קילומטראז'</h3><label>ק"מ נוכחי<input type="number" name="km" min="${v.km}" value="${v.km}" required></label><button class="btn">עדכון ק"מ</button></form>
@@ -1453,6 +1457,7 @@ document.addEventListener('click',async e=>{
  const b=e.target.closest('[data-a]');if(!b)return;
  const a=b.dataset.a;
  if(a==='veh')openVeh(b.dataset.id);
+ if(a==='dveh'){ui.dvid=b.dataset.id;render();window.scrollTo(0,0)}
  if(a==='back'){closeVeh();render();window.scrollTo(0,vy)}
  if(a==='tab'){closeVeh();ui.tab=b.dataset.v;ui.year=null;const to=b.dataset.to;if(b.dataset.v==='mng'&&SUBOF[to])ui.sub=SUBOF[to];render();const t=to&&document.getElementById(to);if(t){const d=t.tagName==='DETAILS'?t:t.closest('details');if(d)d.open=true;t.scrollIntoView()}else window.scrollTo(0,0)}
  if(a==='sub'){ui.sub=b.dataset.v;render();window.scrollTo(0,0)}

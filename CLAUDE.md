@@ -13,7 +13,7 @@ Vehicle-fleet maintenance web app for Kfir (קפיר), a dog breeder who manages
 - Single-file Hebrew RTL app: `index.html` (HTML + CSS + JS, supabase-js from a CDN). Plus `sw.js`, `manifest.json`, icons.
 - Hosted on **GitHub Pages**: https://kfirfleet.github.io/fleet/ . Deploy = push to `main` (republishes in 1-2 minutes). Commit with a `Co-Authored-By` trailer.
 - Backend: **Supabase** project `rodlmlsdgwqyxqaimkfm` (dashboard: https://supabase.com/dashboard/project/rodlmlsdgwqyxqaimkfm). Postgres + Auth + Storage + one Edge Function.
-- Two roles: **manager** (Kfir) sees everything; **driver** sees only his vehicle (update km, add a service with invoice).
+- Two roles: **manager** (Kfir) sees everything; **driver** sees only his own vehicles (RLS; one driver may have several, shown as a button row `.vpick`, state `ui.dvid`; update km, add a service with invoice).
 
 ## Database (public schema, RLS on everything)
 `profiles` (role manager|driver), `vehicles` (plate, model, year, km, driver_id, test_date, insurance_date, license_path, license_at, service_interval_km/months), `services` (type periodic|tires|brakes|repair|other, service_date, km, cost, garage, invoice_path), `settings`, `km_updates`, `app_installs`, `push_subs`, `app_secrets` (vapid, cron), `invoice_mail` (accounting email), `vehicle_expenses` (kind insurance|test, expense_date, amount, note, invoice_path; manager only via `public.is_manager()`).
