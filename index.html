@@ -340,8 +340,8 @@ function expBox(v){
 }
 function viewHist(){
  if(!ui.year)return svcForm()+'<h2>כל הטיפולים</h2>'+svcTable(D.services);
- const l=ySvcs(ui.year),t=sumA(l,'cost'),ex=expYear(D.exp||[],ui.year),te=sumA(ex,'amount'),mgr=me&&me.role==='manager'&&D.exp!==null;
- return `<h2>הוצאות ב-${ui.year}</h2><div class="card"><div class="row" style="padding:0;border:0"><span><b>סה"כ ₪${fmt(t+te)}</b><br><small>טיפולים ₪${fmt(t)} (${l.length})${mgr?` · ביטוח וטסט ₪${fmt(te)} (${ex.length})`:''}</small></span><button type="button" class="btn ghost sm" data-a="allsvc">הצגת כל הטיפולים</button></div></div><h2>טיפולים</h2>${svcList(l,true,'עוד לא נרשמו טיפולים השנה')}${mgr?`<h2>ביטוח וטסט</h2>${expList(ex,true,'עוד לא נרשמו תשלומי ביטוח וטסט השנה')}`:''}${svcForm()}`;
+ const l=ySvcs(ui.year),t=sumA(l,'cost'),ex=expYear(D.exp||[],ui.year),te=sumA(ex,'amount'),mgr=me&&me.role==='manager'&&D.exp!==null,exI=ex.filter(x=>x.kind==='insurance'),exT=ex.filter(x=>x.kind==='test');
+ return `<h2>הוצאות ב-${ui.year}</h2><div class="card"><div class="row" style="padding:0;border:0"><span><b>סה"כ ₪${fmt(t+te)}</b><br><small>טיפולים ₪${fmt(t)} (${l.length})${mgr?` · ביטוח ₪${fmt(sumA(exI,'amount'))} (${exI.length}) · טסט ₪${fmt(sumA(exT,'amount'))} (${exT.length})`:''}</small></span><button type="button" class="btn ghost sm" data-a="allsvc">הצגת כל הטיפולים</button></div></div><h2>טיפולים</h2>${svcList(l,true,'עוד לא נרשמו טיפולים השנה')}${mgr?`<h2>ביטוח</h2>${expList(exI,true,'עוד לא נרשמו תשלומי ביטוח השנה')}<h2>טסט</h2>${expList(exT,true,'עוד לא נרשמו תשלומי טסט השנה')}`:''}${svcForm()}`;
 }
 // ---------- רשימת רכבים לביקורת (טבלה אחת לכל הצי, להדפסה ולאקסל) ----------
 const dmy=s=>{if(!s)return '';const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s));if(m)return m[3]+'/'+m[2]+'/'+m[1];const d=new Date(s);return isNaN(d)?'':String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()};
@@ -383,13 +383,13 @@ function viewReport(){
 }
 function viewDash(){
  const at=attention(),yr=new Date().getFullYear();
- const cost=ySvcs(yr).reduce((t,s)=>t+Number(s.cost||0),0)+sumA(expYear(D.exp||[],yr),'amount');
+ const yE=expYear(D.exp||[],yr),yS=sumA(ySvcs(yr),'cost'),yI=sumA(yE.filter(x=>x.kind==='insurance'),'amount'),yT=sumA(yE.filter(x=>x.kind==='test'),'amount'),cost=yS+sumA(yE,'amount');
  const dr=id=>D.profiles.find(p=>p.id===id)||{};
  const rows=at.map(x=>{
   const p=dr(x.v.driver_id),w=x.stale&&p.phone?waLink(p.phone,p.full_name||''):'';
   return `<div class="row"><button type="button" class="rowlink" data-a="veh" data-id="${x.v.id}"><b>${vname(x.v)}</b><small>${drv(x.v.driver_id)}</small></button><span class="tags">${x.items.map(i=>`<span class="b ${cls(i.lvl)}">${i.txt}</span>`).join('')}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת</a>`:''}</span></div>`}).join('');
  const cards=D.vehicles.map(v=>{const s=svcStatus(v);return `<button type="button" class="card vcard" data-a="veh" data-id="${v.id}"><b>${esc(v.model)}</b><small>${esc(v.plate)}</small><small>${drv(v.driver_id)}</small><span class="vkm">${fmt(v.km)} ק"מ</span><span class="tags"><span class="b ${cls(s.lvl)}">${s.txt}</span>${docs(v).map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</span></button>`}).join('');
- return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><div class="card"><small>דורשים תשומת לב</small><b>${at.length}</b></div><button type="button" class="card stat-link" data-a="costyear"><small>הוצאות השנה</small><b>₪${fmt(cost)}</b><small>טיפולים, ביטוח וטסט. לחיצה לפירוט</small></button></div>
+ return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><div class="card"><small>דורשים תשומת לב</small><b>${at.length}</b></div><button type="button" class="card stat-link" data-a="costyear" style="grid-column:1/-1"><small>הוצאות השנה</small><b>₪${fmt(cost)}</b><small>טיפולים ₪${fmt(yS)}${D.exp!==null?` · ביטוח ₪${fmt(yI)} · טסט ₪${fmt(yT)}`:''}<br>לחיצה לפירוט</small></button></div>
  ${instLine()}<h2>דורש תשומת לב</h2>${at.length?`<div class="card list">${rows}</div>`:'<div class="card">הכול תקין, אין התראות פתוחות</div>'}
  <h2>הצי <small>(לחיצה על רכב פותחת את כל הפרטים עליו)</small></h2>${cards?`<div class="fleet">${cards}</div>`:'<div class="card">עוד לא נוספו רכבים</div>'}
  ${D.vehicles.length?'<div style="margin-top:14px"><button type="button" class="btn ghost" data-a="report">רשימת רכבים לביקורת (להדפסה ולאקסל)</button></div>':''}`;
