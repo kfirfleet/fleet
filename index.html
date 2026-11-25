@@ -100,6 +100,9 @@ const vname=v=>`${esc(v.model)} · ${esc(v.plate)}`;
 const drv=id=>esc((D.profiles.find(p=>p.id===id)||{}).full_name||'לא משויך');
 const byId=id=>D.vehicles.find(v=>v.id===id);
 const isViewer=()=>!!me&&me.role==='viewer';
+// נהג שהמנהל נתן לו גם לראות את הסקירה (profiles.see_all): לשונית נוספת, לקריאה בלבד
+const seesAll=()=>!!me&&me.role==='driver'&&me.see_all===true;
+const myCars=()=>me&&me.role==='driver'?D.vehicles.filter(x=>x.driver_id===me.id):D.vehicles;
 
 async function init(){
  if(!window.supabase){$('#view').innerHTML='<div class="card">לא ניתן לטעון את הספרייה. בדוק חיבור לאינטרנט ורענן את הדף.</div>';return}
@@ -122,7 +125,7 @@ async function load(uid){
  D.mail=null;
  D.exp=[];
  if(me.role==='manager'){const q=await sb.from('app_installs').select('*');D.inst=q.error?null:(q.data||[]);const w=await sb.from('push_subs').select('user_id');D.push=w.error?null:(w.data||[]);const x=await sb.from('invoice_mail').select('email').maybeSingle();D.mail=x.error?null:{email:(x.data&&x.data.email)||''};const y=await sb.from('vehicle_expenses').select('*').order('expense_date',{ascending:false});D.exp=y.error?null:(y.data||[])}
- if(me.role==='viewer'){const y=await sb.from('vehicle_expenses').select('*').order('expense_date',{ascending:false});D.exp=y.error?null:(y.data||[])}
+ if(me.role==='viewer'||(me.role==='driver'&&me.see_all===true)){const y=await sb.from('vehicle_expenses').select('*').order('expense_date',{ascending:false});D.exp=y.error?null:(y.data||[])}
 }
 function showLogin(){
  me=null;$('#who').innerHTML='';$('#tabs').innerHTML='';drawInst();drawPush();
@@ -426,7 +429,7 @@ function viewReport(){
 function viewDash(){
  const at=attention(),yr=new Date().getFullYear();
  const gN=guessPeriods().length,yE=expYear(D.exp||[],yr),yS=sumA(ySvcs(yr),'cost'),yI=sumA(yE.filter(x=>x.kind==='insurance'),'amount'),yT=sumA(yE.filter(x=>x.kind==='test'),'amount'),cost=yS+sumA(yE,'amount');
- const dr=id=>D.profiles.find(p=>p.id===id)||{},vw=isViewer();
+ const dr=id=>D.profiles.find(p=>p.id===id)||{},vw=!(me&&me.role==='manager');
  const rows=at.map(x=>{
   const p=dr(x.v.driver_id),w=!vw&&x.stale&&p.phone?waLink(p.phone,p.full_name||''):'';
   return `<div class="row"><button type="button" class="rowlink"${vw?'':` data-a="veh" data-id="${x.v.id}"`}><b>${vname(x.v)}</b><small>${drv(x.v.driver_id)}</small></button><span class="tags">${x.items.map(i=>`<span class="b ${cls(i.lvl)}">${i.txt}</span>`).join('')}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת</a>`:''}</span></div>`}).join('');
@@ -512,13 +515,13 @@ function viewManage(){
  <details id="sec-kmfix" style="margin-top:12px"><summary>עריכת ק"מ לרכב</summary><form class="form" data-f="kmfix" style="padding-bottom:12px"><label>רכב<select name="vid">${D.vehicles.map(v=>`<option value="${v.id}">${vname(v)} · ${fmt(v.km)} ק"מ</option>`).join('')}</select></label><label>ק"מ חדש<input type="number" name="km" min="0" required></label><button class="btn">עדכון ק"מ</button></form></details>`;
 }
 function viewDriver(){
- const v=D.vehicles.find(x=>x.id===ui.dvid)||D.vehicles[0];
+ const mine=myCars(),v=mine.find(x=>x.id===ui.dvid)||mine[0];
  if(!v)return '<div class="card">עדיין לא שויך אליך רכב. פנה למנהל.</div>';
  const s=svcStatus(v),dc=docs(v),age=kmAge(v);
  const digits=String(v.km).padStart(6,'0').split('').map(c=>`<i>${c}</i>`).join('');
- const many=D.vehicles.length>1;
- const pick=many?`<div class="vpick">${D.vehicles.map(x=>`<button type="button" class="tab ${x.id===v.id?'on':''}" data-a="dveh" data-id="${x.id}">${vname(x)}</button>`).join('')}</div>`:'';
- const more=many?D.vehicles.filter(x=>x.id!==v.id&&kmAge(x)>=REM_DAYS).map(x=>`<div class="card remind"><b>גם ב-${vname(x)} הגיע הזמן לעדכן ק"מ</b><br><button type="button" class="btn sm" data-a="dveh" data-id="${x.id}">מעבר לרכב</button></div>`).join(''):'';
+ const many=mine.length>1;
+ const pick=many?`<div class="vpick">${mine.map(x=>`<button type="button" class="tab ${x.id===v.id?'on':''}" data-a="dveh" data-id="${x.id}">${vname(x)}</button>`).join('')}</div>`:'';
+ const more=many?mine.filter(x=>x.id!==v.id&&kmAge(x)>=REM_DAYS).map(x=>`<div class="card remind"><b>גם ב-${vname(x)} הגיע הזמן לעדכן ק"מ</b><br><button type="button" class="btn sm" data-a="dveh" data-id="${x.id}">מעבר לרכב</button></div>`).join(''):'';
  return `${pick}${age>=REM_DAYS?`<div class="card remind"><b>הגיע הזמן לעדכן ק"מ</b><br><small>עברו ${age} ימים מהעדכון האחרון. אפשר לעדכן בטופס למטה.</small></div>`:''}${more}<div class="card"><h3>${vname(v)}</h3><small>שנה ${v.year||'—'} · טסט עד ${fd(v.test_date)} · ביטוח עד ${fd(v.insurance_date)}</small>
  <div class="odo">${digits}<small>ק"מ</small></div>
  <div class="tags"><span class="b ${cls(s.lvl)}">${s.txt}</span>${dc.map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</div></div>
@@ -595,12 +598,13 @@ begin
 end $$;
 alter table public.profiles add constraint profiles_role_check
   check (role in ('manager', 'driver', 'viewer'));
+alter table public.profiles add column if not exists see_all boolean not null default false;
 
 create or replace function public.is_viewer() returns boolean
 language sql security definer stable set search_path = '' as $$
   select exists (
     select 1 from public.profiles
-    where id = (select auth.uid()) and role = 'viewer'
+    where id = (select auth.uid()) and (role = 'viewer' or see_all)
   );
 $$;
 
@@ -626,6 +630,10 @@ end $$;`;
  const sqlW2=`update public.profiles
 set role = 'viewer', full_name = 'שם הצופה'
 where id = (select id from auth.users where email = 'viewer@example.com');`;
+ const sqlW3=`update public.profiles
+set see_all = true
+where id = (select id from auth.users where email = 'driver@example.com')
+returning full_name, role, see_all;`;
  const sqlCtr=`alter table public.vehicles
   add column if not exists contract_path text,
   add column if not exists contract_at timestamptz;
@@ -1344,6 +1352,7 @@ function doPost(e) {
  <li>שלב 3: ב-SQL Editor מחליפים בקטע הבא את שם הצופה ואת האימייל (בין הגרשיים) ומריצים. ${sqlL}${pre(sqlW2)}</li>
  <li>שלב 4: שולחים לו את הקישור לאתר, את האימייל ואת הסיסמה הזמנית. הוא יראה רק את הסקירה, ובראש המסך כתוב "צפייה בלבד".</li>
  <li>להסיר גישה: ב-Supabase, Authentication ← Users, מוחקים את המשתמש.</li>
+ <li>נהג שצריך גם לצפות בסקירה (בלי להפסיק לעדכן ק"מ ברכבים שלו): לא הופכים אותו לצופה. אחרי שלב 1, מחליפים בקטע הבא את האימייל שלו ומריצים. אצלו יופיעו שתי לשוניות: "הרכבים שלי" (כמו עכשיו) ו"סקירה" (קריאה בלבד, כולל סכומים). כדי להחזיר אותו לנהג רגיל, מריצים את אותו קטע עם false במקום true. ${sqlL}${pre(sqlW3)}</li>
  <li>חשוב לדעת: האתר מציג לו רק את הסקירה, אבל ההרשאה בשרת היא קריאה בלבד לנתוני הצי: נהגים (כולל טלפונים), רכבים, ק"מ, טיפולים והוצאות. הוא לא יכול לראות קבצים (חשבוניות, רישיונות, חוזים) ולא לשנות כלום.</li></ol></details>
  <details><summary>הוספת נהג חדש</summary><ol>
  <li>ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. ${L(sb0+'/auth/users','פתיחה')}</li>
@@ -1461,11 +1470,11 @@ function doPost(e) {
 function render(){
  const m=me.role==='manager';
  $('#who').innerHTML=`<small>${esc(me.full_name)}${isViewer()?' · צפייה בלבד':''}</small><button class="btn ghost sm" data-a="out">יציאה</button>`;
- const vw=isViewer(),tabs=m?[['dash','סקירה'],['hist','טיפולים'],['mng','ניהול'],['help','מדריך']]:[];
- $('#tabs').innerHTML=tabs.map(([k,t])=>`<button class="tab ${ui.tab===k?'on':''}" data-a="tab" data-v="${k}">${t}</button>`).join('');
+ const vw=isViewer(),sa=seesAll(),tabs=m?[['dash','סקירה'],['hist','טיפולים'],['mng','ניהול'],['help','מדריך']]:[];
+ $('#tabs').innerHTML=sa?[['mine','הרכבים שלי'],['ov','סקירה']].map(([k,t])=>`<button class="tab ${(ui.dsa||'mine')===k?'on':''}" data-a="dsa" data-v="${k}">${t}</button>`).join(''):tabs.map(([k,t])=>`<button class="tab ${ui.tab===k?'on':''}" data-a="tab" data-v="${k}">${t}</button>`).join('');
  if(ui.vid&&!byId(ui.vid))ui.vid=null;
  if(vw)ui.vid=null;
- $('#view').innerHTML=vw?viewDash():m?(ui.tab==='dash'?(ui.vid?viewVeh(byId(ui.vid)):viewDash()):ui.tab==='hist'?viewHist():ui.tab==='help'?viewHelp():ui.tab==='rep'?viewReport():viewManage()):viewDriver();
+ $('#view').innerHTML=vw?viewDash():m?(ui.tab==='dash'?(ui.vid?viewVeh(byId(ui.vid)):viewDash()):ui.tab==='hist'?viewHist():ui.tab==='help'?viewHelp():ui.tab==='rep'?viewReport():viewManage()):sa&&ui.dsa==='ov'?viewDash():viewDriver();
  drawInst();drawPush();
 }
 let vh=false,skipPop=false,vy=0;
@@ -1707,6 +1716,7 @@ document.addEventListener('click',async e=>{
  const b=e.target.closest('[data-a]');if(!b)return;
  const a=b.dataset.a;
  if(isViewer()&&a!=='attn'&&a!=='out')return;
+ if(a==='dsa'){ui.dsa=b.dataset.v;render();window.scrollTo(0,0)}
  if(a==='veh')openVeh(b.dataset.id);
  if(a==='guessper'){
   if(!me||me.role!=='manager')return;
