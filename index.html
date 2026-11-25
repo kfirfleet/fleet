@@ -66,7 +66,7 @@ pre{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:10
 a.btn{text-decoration:none;display:inline-block}
 .fleet{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:10px;margin-bottom:12px}
 .vcard{font:inherit;color:inherit;text-align:start;cursor:pointer;display:grid;gap:4px;margin:0;align-content:start;width:100%}
-.vcard b{font-size:16px}.vcard .tags{margin-top:4px}.vkm{font-weight:500}
+.ro .vcard{cursor:default}.vcard b{font-size:16px}.vcard .tags{margin-top:4px}.vkm{font-weight:500}
 .rowlink{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:start;cursor:pointer;display:grid;gap:2px}
 .instline{display:block;width:100%;margin-bottom:12px}
 .subtabs{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto}.subtabs .tab{padding:5px 18px;font-size:14px}
@@ -99,6 +99,7 @@ let sb,me=null,ui={tab:'dash'},D={profiles:[],vehicles:[],services:[],exp:[],set
 const vname=v=>`${esc(v.model)} · ${esc(v.plate)}`;
 const drv=id=>esc((D.profiles.find(p=>p.id===id)||{}).full_name||'לא משויך');
 const byId=id=>D.vehicles.find(v=>v.id===id);
+const isViewer=()=>!!me&&me.role==='viewer';
 
 async function init(){
  if(!window.supabase){$('#view').innerHTML='<div class="card">לא ניתן לטעון את הספרייה. בדוק חיבור לאינטרנט ורענן את הדף.</div>';return}
@@ -109,7 +110,7 @@ async function init(){
 async function start(){
  const{data:{user}}=await sb.auth.getUser();
  if(!user){showLogin();return}
- await load(user.id);render();track(user.id);pushSync();
+ await load(user.id);render();if(!isViewer()){track(user.id);pushSync()}
 }
 async function load(uid){
  const r=await Promise.all([sb.from('profiles').select('*'),sb.from('vehicles').select('*').order('plate'),sb.from('services').select('*').order('service_date',{ascending:false}),sb.from('settings').select('*').maybeSingle(),sb.from('km_updates').select('vehicle_id,created_at').order('created_at',{ascending:false}).limit(2000)]);
@@ -121,6 +122,7 @@ async function load(uid){
  D.mail=null;
  D.exp=[];
  if(me.role==='manager'){const q=await sb.from('app_installs').select('*');D.inst=q.error?null:(q.data||[]);const w=await sb.from('push_subs').select('user_id');D.push=w.error?null:(w.data||[]);const x=await sb.from('invoice_mail').select('email').maybeSingle();D.mail=x.error?null:{email:(x.data&&x.data.email)||''};const y=await sb.from('vehicle_expenses').select('*').order('expense_date',{ascending:false});D.exp=y.error?null:(y.data||[])}
+ if(me.role==='viewer'){const y=await sb.from('vehicle_expenses').select('*').order('expense_date',{ascending:false});D.exp=y.error?null:(y.data||[])}
 }
 function showLogin(){
  me=null;$('#who').innerHTML='';$('#tabs').innerHTML='';drawInst();drawPush();
@@ -424,15 +426,15 @@ function viewReport(){
 function viewDash(){
  const at=attention(),yr=new Date().getFullYear();
  const gN=guessPeriods().length,yE=expYear(D.exp||[],yr),yS=sumA(ySvcs(yr),'cost'),yI=sumA(yE.filter(x=>x.kind==='insurance'),'amount'),yT=sumA(yE.filter(x=>x.kind==='test'),'amount'),cost=yS+sumA(yE,'amount');
- const dr=id=>D.profiles.find(p=>p.id===id)||{};
+ const dr=id=>D.profiles.find(p=>p.id===id)||{},vw=isViewer();
  const rows=at.map(x=>{
-  const p=dr(x.v.driver_id),w=x.stale&&p.phone?waLink(p.phone,p.full_name||''):'';
-  return `<div class="row"><button type="button" class="rowlink" data-a="veh" data-id="${x.v.id}"><b>${vname(x.v)}</b><small>${drv(x.v.driver_id)}</small></button><span class="tags">${x.items.map(i=>`<span class="b ${cls(i.lvl)}">${i.txt}</span>`).join('')}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת</a>`:''}</span></div>`}).join('');
- const cards=D.vehicles.map(v=>{const s=svcStatus(v);return `<button type="button" class="card vcard" data-a="veh" data-id="${v.id}"><b>${esc(v.model)}</b><small>${esc(v.plate)}</small><small>${drv(v.driver_id)}</small><span class="vkm">${fmt(v.km)} ק"מ</span><span class="tags"><span class="b ${cls(s.lvl)}">${s.short||s.txt}</span>${docs(v).map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</span></button>`}).join('');
- return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><button type="button" class="card stat-link" data-a="attn" aria-expanded="${ui.att?'true':'false'}"><small>דורשים תשומת לב</small><b>${at.length}</b><small>${ui.att?'לחיצה לסגירה':'לחיצה לפתיחה'}</small></button><button type="button" class="card stat-link" data-a="costyear" style="grid-column:1/-1"><small>הוצאות השנה</small><b>₪${fmt(cost)}</b><small>טיפולים ₪${fmt(yS)}${D.exp!==null?` · ביטוח ₪${fmt(yI)} · טסט ₪${fmt(yT)}`:''}${gN?`<br>${gN===1?'תשלום אחד ממתין':gN+' תשלומים ממתינים'} לבדיקה`:''}<br>לחיצה לפירוט</small></button></div>
+  const p=dr(x.v.driver_id),w=!vw&&x.stale&&p.phone?waLink(p.phone,p.full_name||''):'';
+  return `<div class="row"><button type="button" class="rowlink"${vw?'':` data-a="veh" data-id="${x.v.id}"`}><b>${vname(x.v)}</b><small>${drv(x.v.driver_id)}</small></button><span class="tags">${x.items.map(i=>`<span class="b ${cls(i.lvl)}">${i.txt}</span>`).join('')}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת</a>`:''}</span></div>`}).join('');
+ const cards=D.vehicles.map(v=>{const s=svcStatus(v);return `<button type="button" class="card vcard"${vw?'':` data-a="veh" data-id="${v.id}"`}><b>${esc(v.model)}</b><small>${esc(v.plate)}</small><small>${drv(v.driver_id)}</small><span class="vkm">${fmt(v.km)} ק"מ</span><span class="tags"><span class="b ${cls(s.lvl)}">${s.short||s.txt}</span>${docs(v).map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</span></button>`}).join('');
+ return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><button type="button" class="card stat-link" data-a="attn" aria-expanded="${ui.att?'true':'false'}"><small>דורשים תשומת לב</small><b>${at.length}</b><small>${ui.att?'לחיצה לסגירה':'לחיצה לפתיחה'}</small></button>${vw?'<div class="card" style="grid-column:1/-1">':'<button type="button" class="card stat-link" data-a="costyear" style="grid-column:1/-1">'}<small>הוצאות השנה</small><b>₪${fmt(cost)}</b><small>טיפולים ₪${fmt(yS)}${D.exp!==null?` · ביטוח ₪${fmt(yI)} · טסט ₪${fmt(yT)}`:''}${gN&&!vw?`<br>${gN===1?'תשלום אחד ממתין':gN+' תשלומים ממתינים'} לבדיקה`:''}${vw?'':'<br>לחיצה לפירוט'}</small>${vw?'</div>':'</button>'}</div>
  ${ui.att?`<h2>דורש תשומת לב</h2>${at.length?`<div class="card list">${rows}</div>`:'<div class="card">הכול תקין, אין התראות פתוחות</div>'}`:''}
- <h2>הצי <small>(לחיצה על רכב פותחת את כל הפרטים עליו)</small></h2>${cards?`<div class="fleet">${cards}</div>`:'<div class="card">עוד לא נוספו רכבים</div>'}
- ${D.vehicles.length?'<div style="margin-top:14px"><button type="button" class="btn ghost" data-a="report">רשימת רכבים לביקורת (להדפסה ולאקסל)</button></div>':''}`;
+ <h2>הצי${vw?'':' <small>(לחיצה על רכב פותחת את כל הפרטים עליו)</small>'}</h2>${cards?`<div class="fleet${vw?' ro':''}">${cards}</div>`:'<div class="card">עוד לא נוספו רכבים</div>'}
+ ${D.vehicles.length&&!vw?'<div style="margin-top:14px"><button type="button" class="btn ghost" data-a="report">רשימת רכבים לביקורת (להדפסה ולאקסל)</button></div>':''}`;
 }
 function ivBox(v){
  const g=D.settings,iv=ivOf(v);
@@ -581,6 +583,49 @@ grant all on public.vehicle_expenses to service_role;
 drop policy if exists vehicle_expenses_mgr on public.vehicle_expenses;
 create policy vehicle_expenses_mgr on public.vehicle_expenses for all to authenticated
   using (public.is_manager()) with check (public.is_manager());`;
+ const sqlW=`do $$
+declare c record;
+begin
+  for c in select conname from pg_constraint
+    where conrelid = 'public.profiles'::regclass and contype = 'c'
+      and pg_get_constraintdef(oid) like '%role%'
+  loop
+    execute format('alter table public.profiles drop constraint %I', c.conname);
+  end loop;
+end $$;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('manager', 'driver', 'viewer'));
+
+create or replace function public.is_viewer() returns boolean
+language sql security definer stable set search_path = '' as $$
+  select exists (
+    select 1 from public.profiles
+    where id = (select auth.uid()) and role = 'viewer'
+  );
+$$;
+
+drop policy if exists viewer_read on public.profiles;
+create policy viewer_read on public.profiles for select to authenticated
+  using (public.is_viewer());
+drop policy if exists viewer_read on public.vehicles;
+create policy viewer_read on public.vehicles for select to authenticated
+  using (public.is_viewer());
+drop policy if exists viewer_read on public.km_updates;
+create policy viewer_read on public.km_updates for select to authenticated
+  using (public.is_viewer());
+drop policy if exists viewer_read on public.services;
+create policy viewer_read on public.services for select to authenticated
+  using (public.is_viewer());
+do $$
+begin
+  if to_regclass('public.vehicle_expenses') is not null then
+    execute 'drop policy if exists viewer_read on public.vehicle_expenses';
+    execute 'create policy viewer_read on public.vehicle_expenses for select to authenticated using (public.is_viewer())';
+  end if;
+end $$;`;
+ const sqlW2=`update public.profiles
+set role = 'viewer', full_name = 'שם הצופה'
+where id = (select id from auth.users where email = 'viewer@example.com');`;
  const sqlCtr=`alter table public.vehicles
   add column if not exists contract_path text,
   add column if not exists contract_at timestamptz;
@@ -1292,6 +1337,14 @@ function doPost(e) {
  <li>בסקירה לוחצים על רכב ברשימת הצי, או על שמו בקטע "דורש תשומת לב". נפתח דף עם כל מה שקשור לרכב.</li>
  <li>בדף: הק"מ והסטטוס, הנהג (אפשר להחליף), התקשרות ושליחת תזכורת, ההוצאות (טיפולים, ביטוח וטסט), מרווח הטיפול של הרכב, עריכת פרטי הרכב (מספר רישוי, דגם, שנה, תוקף טסט וביטוח), רישום תשלום ביטוח או טסט, רישום טיפול חדש, היסטוריית הטיפולים והחשבוניות (ליד כל טיפול יש כפתור "עריכה" לתיקון סוג, תאריך, ק"מ, עלות ומוסך, בלי לשלוח מייל נוסף), רישיון הרכב ותיקון ק"מ.</li>
  <li>חזרה לסקירה: לוחצים "חזרה לסקירה" או על כפתור החזרה של הטלפון.</li></ol></details>
+ <details><summary>צופה: צפייה בסקירה בלבד</summary><ol>
+ <li>מה זה: משתמש שרואה רק את מסך הסקירה (הצי, מה דורש תשומת לב וההוצאות של השנה, כולל סכומים). אין לו שום אפשרות לשנות, להוסיף או למחוק. הוא לא רואה את הלשוניות טיפולים, ניהול ומדריך, ולא את דפי הרכבים, החשבוניות והמסמכים.</li>
+ <li>שלב 1 (פעם אחת בלבד): ב-SQL Editor מריצים את הקטע הבא. אם מופיעה אזהרה על פעולה שמוחקת, לוחצים על אישור ההרצה. אמור להופיע Success. ${sqlL}${pre(sqlW)}</li>
+ <li>שלב 2: ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. ${L(sb0+'/auth/users','פתיחה')}</li>
+ <li>שלב 3: ב-SQL Editor מחליפים בקטע הבא את שם הצופה ואת האימייל (בין הגרשיים) ומריצים. ${sqlL}${pre(sqlW2)}</li>
+ <li>שלב 4: שולחים לו את הקישור לאתר, את האימייל ואת הסיסמה הזמנית. הוא יראה רק את הסקירה, ובראש המסך כתוב "צפייה בלבד".</li>
+ <li>להסיר גישה: ב-Supabase, Authentication ← Users, מוחקים את המשתמש.</li>
+ <li>חשוב לדעת: האתר מציג לו רק את הסקירה, אבל ההרשאה בשרת היא קריאה בלבד לנתוני הצי: נהגים (כולל טלפונים), רכבים, ק"מ, טיפולים והוצאות. הוא לא יכול לראות קבצים (חשבוניות, רישיונות, חוזים) ולא לשנות כלום.</li></ol></details>
  <details><summary>הוספת נהג חדש</summary><ol>
  <li>ב-Supabase: Authentication ← Users ← Add user ← Create new user. אימייל באותיות קטנות, סיסמה זמנית, ולסמן Auto Confirm User. ${L(sb0+'/auth/users','פתיחה')}</li>
  <li>באתר: ניהול ← נהגים. ${go('mng','sec-drivers','מעבר לנהגים')} אם הנהג לא מופיע, מריצים ב-SQL Editor את הקוד הבא ומרעננים. ${sqlL}${pre(sql1)}</li>
@@ -1407,11 +1460,12 @@ function doPost(e) {
 }
 function render(){
  const m=me.role==='manager';
- $('#who').innerHTML=`<small>${esc(me.full_name)}</small><button class="btn ghost sm" data-a="out">יציאה</button>`;
- const tabs=m?[['dash','סקירה'],['hist','טיפולים'],['mng','ניהול'],['help','מדריך']]:[];
+ $('#who').innerHTML=`<small>${esc(me.full_name)}${isViewer()?' · צפייה בלבד':''}</small><button class="btn ghost sm" data-a="out">יציאה</button>`;
+ const vw=isViewer(),tabs=m?[['dash','סקירה'],['hist','טיפולים'],['mng','ניהול'],['help','מדריך']]:[];
  $('#tabs').innerHTML=tabs.map(([k,t])=>`<button class="tab ${ui.tab===k?'on':''}" data-a="tab" data-v="${k}">${t}</button>`).join('');
  if(ui.vid&&!byId(ui.vid))ui.vid=null;
- $('#view').innerHTML=m?(ui.tab==='dash'?(ui.vid?viewVeh(byId(ui.vid)):viewDash()):ui.tab==='hist'?viewHist():ui.tab==='help'?viewHelp():ui.tab==='rep'?viewReport():viewManage()):viewDriver();
+ if(vw)ui.vid=null;
+ $('#view').innerHTML=vw?viewDash():m?(ui.tab==='dash'?(ui.vid?viewVeh(byId(ui.vid)):viewDash()):ui.tab==='hist'?viewHist():ui.tab==='help'?viewHelp():ui.tab==='rep'?viewReport():viewManage()):viewDriver();
  drawInst();drawPush();
 }
 let vh=false,skipPop=false,vy=0;
@@ -1652,6 +1706,7 @@ document.addEventListener('click',async e=>{
  if(e.target.id==='ed'){$('#ed').classList.remove('on');return}
  const b=e.target.closest('[data-a]');if(!b)return;
  const a=b.dataset.a;
+ if(isViewer()&&a!=='attn'&&a!=='out')return;
  if(a==='veh')openVeh(b.dataset.id);
  if(a==='guessper'){
   if(!me||me.role!=='manager')return;
