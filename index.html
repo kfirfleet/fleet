@@ -433,6 +433,7 @@ function viewVeh(v){
  ${expBox(v)}
  ${svcForm(v.id)}<h2>היסטוריית טיפולים</h2>${svcList(svs,false)}
  ${licBox(v)}
+ ${ctrBox(v)}
  <details><summary>תיקון קילומטראז'</summary><form class="form" data-f="kmfix" style="padding-bottom:12px"><input type="hidden" name="vid" value="${v.id}"><label>ק"מ חדש<input type="number" name="km" min="0" value="${v.km}" required></label><button class="btn">עדכון ק"מ</button></form></details>`;
 }
 function licRow(v){
@@ -442,6 +443,12 @@ function licBox(one){
  if(D.vehicles.length&&!('license_path' in D.vehicles[0]))return `<h2 id="sec-lic">רישיון רכב</h2><div class="card"><small>כדי לשמור צילום רישיון לכל רכב צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "רישיון רכב".</small></div>`;
  const vs=one?[one]:D.vehicles;
  return `<h2 id="sec-lic">רישיון רכב</h2><div class="card list">${vs.map(licRow).join('')||'<small>עוד אין רכבים</small>'}</div>`;
+}
+const CTRMAX=10e6;
+function ctrBox(v){
+ if(!('contract_path' in v))return `<h2 id="sec-ctr">חוזה ליסינג</h2><div class="card"><small>כדי לצרף חוזה לרכב צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "חוזה ליסינג".</small></div>`;
+ const has=!!v.contract_path;
+ return `<h2 id="sec-ctr">חוזה ליסינג</h2><div class="card list"><div class="row"><span>${vname(v)}<br><small>${has?'הועלה ב-'+fd(v.contract_at):'עוד לא הועלה'}</small></span><span class="tags">${has?`<button class="btn sm" data-a="rc" data-p="${esc(v.contract_path)}">צפייה</button>`:''}<label class="btn ghost sm filebtn">${has?'החלפה':'העלאה'}<input type="file" accept="image/*,application/pdf" data-ctr="${v.id}"></label>${has?`<button type="button" class="btn ghost sm" data-a="ctrdel" data-id="${v.id}">מחיקה</button>`:''}</span></div></div>`;
 }
 const SUBS=[['veh','רכבים'],['drv','נהגים'],['set','הגדרות']];
 const SUBOF={'sec-veh':'veh','sec-assign':'veh','sec-lic':'veh','sec-kmfix':'veh','sec-drivers':'drv','sec-inst':'drv','sec-push':'drv','sec-rules':'set','sec-mail':'set'};
@@ -532,6 +539,10 @@ grant all on public.vehicle_expenses to service_role;
 drop policy if exists vehicle_expenses_mgr on public.vehicle_expenses;
 create policy vehicle_expenses_mgr on public.vehicle_expenses for all to authenticated
   using (public.is_manager()) with check (public.is_manager());`;
+ const sqlCtr=`alter table public.vehicles
+  add column if not exists contract_path text,
+  add column if not exists contract_at timestamptz;
+update storage.buckets set file_size_limit = 10485760 where id = 'invoices';`;
  const sqlV=`alter table public.vehicles
   add column if not exists service_interval_km int check (service_interval_km > 0),
   add column if not exists service_interval_months int check (service_interval_months > 0);`;
@@ -1206,6 +1217,12 @@ function doPost(e) {
  <li>כשמתקבל רישיון חדש (למשל אחרי טסט שנתי) לוחצים "החלפה". התמונה הקודמת נמחקת.</li>
  <li>לצפייה לוחצים "צפייה". הרישיון מוצג רק למנהל.</li>
  <li>רק אם ההעלאה נכשלת: מריצים גם את הקטע הבא ומנסים שוב. ${sqlL}${pre(sqlD)}</li></ol></details>
+ <details><summary>חוזה ליסינג</summary><ol>
+ <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. הוא מוסיף לרכבים מקום לחוזה ומגדיל את גודל הקובץ המותר ל-10MB. ${sqlL}${pre(sqlCtr)}</li>
+ <li>אחרי זה: בסקירה לוחצים על הרכב, ובקטע "חוזה ליסינג" לוחצים "העלאה" ובוחרים קובץ PDF (עד 10MB) או תמונה.</li>
+ <li>לצפייה לוחצים "צפייה". כשמקבלים חוזה חדש לוחצים "החלפה", והקובץ הקודם נמחק. "מחיקה" מסירה את החוזה מהרכב.</li>
+ <li>החוזה נשמר בנפרד מקובצי הנהגים ומוצג רק למנהל.</li>
+ <li>אם ההעלאה נכשלת על קובץ PDF: בודקים שהורצה גם הפקודה של קובצי PDF (במדריך, תחת "קריאת חשבוניות אוטומטית").</li></ol></details>
  <details><summary>גיבוי נתונים ידני</summary><ol>
  <li>ב-SQL Editor מריצים select * from services; (וכך גם vehicles, km_updates, profiles). ${sqlL}</li>
  <li>בתוצאות לוחצים Export ← CSV ושומרים את הקובץ.</li>
@@ -1255,9 +1272,9 @@ function shrink(file,max=1600){
 }
 const PDFMAX=4e6;
 const isPdf=f=>!!f&&(f.type==='application/pdf'||/\.pdf$/i.test(f.name||''));
-async function prepFile(file,max){
+async function prepFile(file,max,pdfMax=PDFMAX){
  if(isPdf(file)){
-  if(file.size>PDFMAX)throw new Error('pdfbig');
+  if(file.size>pdfMax)throw new Error('pdfbig');
   return file.type==='application/pdf'?file:new Blob([file],{type:'application/pdf'});
  }
  return shrink(file,max);
@@ -1457,6 +1474,15 @@ document.addEventListener('click',async e=>{
  const b=e.target.closest('[data-a]');if(!b)return;
  const a=b.dataset.a;
  if(a==='veh')openVeh(b.dataset.id);
+ if(a==='ctrdel'){
+  const v=byId(b.dataset.id);if(!v||!v.contract_path||!me||me.role!=='manager')return;
+  if(!confirm('למחוק את חוזה הליסינג של הרכב?'))return;
+  const old=v.contract_path;
+  const{error}=await sb.from('vehicles').update({contract_path:null,contract_at:null}).eq('id',v.id);
+  if(error){console.error(error);toast('המחיקה נכשלה, נסה שוב');return}
+  try{await sb.storage.from('invoices').remove([old])}catch(err){console.error(err)}
+  await load(me.id);render();toast('החוזה נמחק');
+ }
  if(a==='dveh'){ui.dvid=b.dataset.id;render();window.scrollTo(0,0)}
  if(a==='back'){closeVeh();render();window.scrollTo(0,vy)}
  if(a==='tab'){closeVeh();ui.tab=b.dataset.v;ui.year=null;const to=b.dataset.to;if(b.dataset.v==='mng'&&SUBOF[to])ui.sub=SUBOF[to];render();const t=to&&document.getElementById(to);if(t){const d=t.tagName==='DETAILS'?t:t.closest('details');if(d)d.open=true;t.scrollIntoView()}else window.scrollTo(0,0)}
@@ -1561,6 +1587,23 @@ document.addEventListener('change',async e=>{
  if(error){console.error(error);await sb.storage.from('invoices').remove([path]);toast((error.message||'').includes('license_')?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "רישיון רכב"':'השמירה נכשלה, נסה שוב');return}
  if(old){try{await sb.storage.from('invoices').remove([old])}catch(err){console.error(err)}}
  await load(me.id);render();toast('הרישיון נשמר');
+});
+// חוזה ליסינג: קובץ אחד לרכב (PDF עד 10MB או תמונה), נשמר רק למנהל
+document.addEventListener('change',async e=>{
+ const t=e.target,vid=t.dataset&&t.dataset.ctr;if(!vid||!t.files||!t.files[0])return;
+ if(!me||me.role!=='manager')return;
+ const f=t.files[0],old=(byId(vid)||{}).contract_path;t.value='';
+ toast('מעלה את החוזה...');
+ let path=null;
+ try{
+  const blob=await prepFile(f,2200,CTRMAX);path=`exp/${vid}/contract-${crypto.randomUUID()}.${fext(blob)}`;
+  const{error:ue}=await sb.storage.from('invoices').upload(path,blob,{contentType:blob.type});
+  if(ue){console.error(ue);const m=ue.message||'';toast(/size|exceed|large|413/i.test(m)?'הקובץ גדול מדי לאחסון. ההוראות במדריך, תחת "חוזה ליסינג"':upMsg(ue,blob,'חוזה'),4000);return}
+ }catch(err){console.error(err);toast(err&&err.message==='pdfbig'?'קובץ ה-PDF גדול מדי (עד 10MB). בחרו קובץ קטן יותר.':'לא ניתן לעבד את הקובץ. נסו תמונה או PDF אחרים.',4000);return}
+ const{error}=await sb.from('vehicles').update({contract_path:path,contract_at:new Date().toISOString()}).eq('id',vid);
+ if(error){console.error(error);await sb.storage.from('invoices').remove([path]);toast((error.message||'').includes('contract_')?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "חוזה ליסינג"':'השמירה נכשלה, נסה שוב',4000);return}
+ if(old){try{await sb.storage.from('invoices').remove([old])}catch(err){console.error(err)}}
+ await load(me.id);render();toast('החוזה נשמר');
 });
 // רישיון רכב: מנקה ובודק את מה שהמודל קרא
 function parseLic(d){
