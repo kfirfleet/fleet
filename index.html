@@ -1432,7 +1432,7 @@ const H={
   },
  async kmfix(o){
   const v=byId(o.vid),k=+o.km;if(!v)return[0,'הרכב לא נמצא'];
-  if(k>v.km+100000)return[0,'הקילומטראז\' גבוה מדי, בדוק שוב'];
+  if(!Number.isFinite(k)||k<0)return[0,'הקילומטראז\' לא תקין'];
   const{error}=await sb.from('vehicles').update({km:k}).eq('id',o.vid);return res(error,'הק"מ עודכן')
  },
  async mail(o){
