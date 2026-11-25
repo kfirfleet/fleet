@@ -136,7 +136,7 @@ function svcStatus(v){
   const k=ivOf(v).km,plain='אין טיפול תקופתי רשום';
   if(!(k>0)||!(v.km>=0))return{lvl:1,txt:plain,plain};
   const left=(k-v.km%k)%k;
-  return{lvl:1,plain,est:true,txt:left===0?'אין טיפול רשום. לפי המרווח, הגיע הזמן לטיפול':`אין טיפול רשום. לפי המרווח, טיפול בעוד כ-${fmt(left)} ק"מ`};
+  return{lvl:1,plain,est:true,txt:left===0?'אין טיפול רשום. לפי המרווח, הגיע הזמן לטיפול':`אין טיפול רשום. לפי המרווח, טיפול בעוד כ-${fmt(left)} ק"מ`,short:left===0?'הגיע זמן טיפול (הערכה)':`טיפול בעוד כ-${fmt(left)} ק"מ (הערכה)`};
  }
  const iv=ivOf(v);
  const left=last.km+iv.km-v.km;
@@ -426,9 +426,9 @@ function viewDash(){
  const rows=at.map(x=>{
   const p=dr(x.v.driver_id),w=x.stale&&p.phone?waLink(p.phone,p.full_name||''):'';
   return `<div class="row"><button type="button" class="rowlink" data-a="veh" data-id="${x.v.id}"><b>${vname(x.v)}</b><small>${drv(x.v.driver_id)}</small></button><span class="tags">${x.items.map(i=>`<span class="b ${cls(i.lvl)}">${i.txt}</span>`).join('')}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת</a>`:''}</span></div>`}).join('');
- const cards=D.vehicles.map(v=>{const s=svcStatus(v);return `<button type="button" class="card vcard" data-a="veh" data-id="${v.id}"><b>${esc(v.model)}</b><small>${esc(v.plate)}</small><small>${drv(v.driver_id)}</small><span class="vkm">${fmt(v.km)} ק"מ</span><span class="tags"><span class="b ${cls(s.lvl)}">${s.txt}</span>${docs(v).map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</span></button>`}).join('');
- return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><div class="card"><small>דורשים תשומת לב</small><b>${at.length}</b></div><button type="button" class="card stat-link" data-a="costyear" style="grid-column:1/-1"><small>הוצאות השנה</small><b>₪${fmt(cost)}</b><small>טיפולים ₪${fmt(yS)}${D.exp!==null?` · ביטוח ₪${fmt(yI)} · טסט ₪${fmt(yT)}`:''}${gN?`<br>${gN===1?'תשלום אחד ממתין':gN+' תשלומים ממתינים'} לבדיקה`:''}<br>לחיצה לפירוט</small></button></div>
- ${instLine()}<h2>דורש תשומת לב</h2>${at.length?`<div class="card list">${rows}</div>`:'<div class="card">הכול תקין, אין התראות פתוחות</div>'}
+ const cards=D.vehicles.map(v=>{const s=svcStatus(v);return `<button type="button" class="card vcard" data-a="veh" data-id="${v.id}"><b>${esc(v.model)}</b><small>${esc(v.plate)}</small><small>${drv(v.driver_id)}</small><span class="vkm">${fmt(v.km)} ק"מ</span><span class="tags"><span class="b ${cls(s.lvl)}">${s.short||s.txt}</span>${docs(v).map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</span></button>`}).join('');
+ return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><button type="button" class="card stat-link" data-a="attn" aria-expanded="${ui.att?'true':'false'}"><small>דורשים תשומת לב</small><b>${at.length}</b><small>${ui.att?'לחיצה לסגירה':'לחיצה לפתיחה'}</small></button><button type="button" class="card stat-link" data-a="costyear" style="grid-column:1/-1"><small>הוצאות השנה</small><b>₪${fmt(cost)}</b><small>טיפולים ₪${fmt(yS)}${D.exp!==null?` · ביטוח ₪${fmt(yI)} · טסט ₪${fmt(yT)}`:''}${gN?`<br>${gN===1?'תשלום אחד ממתין':gN+' תשלומים ממתינים'} לבדיקה`:''}<br>לחיצה לפירוט</small></button></div>
+ ${ui.att?`<h2>דורש תשומת לב</h2>${at.length?`<div class="card list">${rows}</div>`:'<div class="card">הכול תקין, אין התראות פתוחות</div>'}`:''}${instLine()}
  <h2>הצי <small>(לחיצה על רכב פותחת את כל הפרטים עליו)</small></h2>${cards?`<div class="fleet">${cards}</div>`:'<div class="card">עוד לא נוספו רכבים</div>'}
  ${D.vehicles.length?'<div style="margin-top:14px"><button type="button" class="btn ghost" data-a="report">רשימת רכבים לביקורת (להדפסה ולאקסל)</button></div>':''}`;
 }
@@ -1550,6 +1550,7 @@ document.addEventListener('click',async e=>{
  if(a==='report'){ui.tab='rep';render();window.scrollTo(0,0)}
  if(a==='repcsv'){const blob=new Blob([repCsv()],{type:'text/csv;charset=utf-8'}),u=URL.createObjectURL(blob),l=document.createElement('a');l.href=u;l.download='vehicles-'+today()+'.csv';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}
  if(a==='repprint')window.print();
+ if(a==='attn'){ui.att=!ui.att;render()}
  if(a==='costyear'){ui.tab='hist';ui.year=new Date().getFullYear();render();window.scrollTo(0,0)}
  if(a==='allsvc'){ui.year=null;render();window.scrollTo(0,0)}
  if(a==='explic'){
