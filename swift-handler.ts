@@ -1,4 +1,4 @@
-// km-reminders: (1) התראות לטלפון על עדכון ק"מ (Web Push), (2) שליחת חשבוניות להנהלת החשבונות במייל,
+// km-reminders: (1) התראות לטלפון (Web Push): תזכורת לנהגים לעדכן ק"מ, הודעה למנהל כשנהג מעדכן ק"מ או שומר טיפול, והתראה למנהל חודשיים לפני סיום טסט וביטוח, (2) שליחת חשבוניות להנהלת החשבונות במייל,
 // (3) קריאה אוטומטית של תמונה או קובץ PDF של חשבונית באמצעות Claude (תאריך, סכום, מוסך, ק"מ), וגם של מסמכי ביטוח וטסט (סכום, תאריך, תוקף) ושל רישיון רכב (מספר, דגם, שנה, תוקף).
 // התראות לא צריכות מפתחות חיצוניים. שליחת מייל עוברת דרך סקריפט קטן ב-Gmail שלך (Google Apps Script),
 // וכתובת הסקריפט נשמרת בסוד MAIL_SCRIPT_URL. הקריאה האוטומטית צריכה סוד בשם ANTHROPIC_API_KEY.
@@ -164,6 +164,95 @@ async function sendInvoice(admin: Admin, serviceId: string) {
 }
 
 // ---------- קריאה אוטומטית של חשבונית (Claude) ----------
+// ---------- הודעות למנהלים (Web Push) ----------
+async function toManagers(admin: Admin, v: Vapid, pub: string, message: unknown) {
+  const { data: mgrs } = await admin.from('profiles').select('id').eq('role', 'manager')
+  const ids = (mgrs ?? []).map((m) => String(m.id))
+  if (ids.length === 0) return { managers: 0, withPush: 0, sent: 0, removed: 0 }
+  const { data: subs } = await admin.from('push_subs').select('id,user_id,endpoint,p256dh,auth').in('user_id', ids)
+  let sent = 0
+  let removed = 0
+  for (const s of (subs ?? []) as Sub[]) {
+    const st = await push(s, message, v, pub)
+    if (st >= 200 && st < 300) sent++
+    else if (st === 404 || st === 410) {
+      await admin.from('push_subs').delete().eq('id', s.id)
+      removed++
+    }
+  }
+  return { managers: ids.length, withPush: (subs ?? []).length, sent, removed }
+}
+const fmtNum = (n: unknown) => Number(n ?? 0).toLocaleString('en-US')
+
+// נהג עדכן ק"מ או שמר טיפול (עם או בלי חשבונית): הודעה לכל המנהלים.
+// הלקוח קורא לכאן אחרי שמירה מוצלחת. הפונקציה בודקת שהרכב של הנהג ושהעדכון באמת נשמר בחמש הדקות האחרונות,
+// והטקסט נבנה כאן ממסד הנתונים (לא ממה שהלקוח שולח).
+async function notifyManagers(admin: Admin, userId: string, kind: string, vid: string, v: Vapid, pub: string) {
+  const { data: me } = await admin.from('profiles').select('role,full_name').eq('id', userId).maybeSingle()
+  if (!me) return reply({ ok: false, error: 'forbidden' }, 403)
+  if (me.role === 'manager') return reply({ ok: true, sent: 0, skipped: 'manager' })
+  if (kind !== 'km' && kind !== 'svc') return reply({ ok: false, error: 'bad kind' }, 400)
+  const { data: car } = await admin.from('vehicles').select('id,plate,model,driver_id').eq('id', vid).maybeSingle()
+  if (!car || car.driver_id !== userId) return reply({ ok: false, error: 'forbidden' }, 403)
+  const since = new Date(Date.now() - 5 * 60000).toISOString()
+  const who = String(me.full_name || 'נהג')
+  const carName = String(car.model ?? '') + ' ' + String(car.plate ?? '')
+  let title = ''
+  let text = ''
+  if (kind === 'km') {
+    const { data: u } = await admin
+      .from('km_updates')
+      .select('km,created_at')
+      .eq('vehicle_id', vid)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (!u || u.length === 0) return reply({ ok: true, sent: 0, skipped: 'no recent update' })
+    title = 'עדכון קילומטראז׳'
+    text = who + ': ' + carName + ' · ' + fmtNum(u[0].km) + ' ק"מ'
+  } else {
+    const { data: sv } = await admin
+      .from('services')
+      .select('type,cost,invoice_path,created_at')
+      .eq('vehicle_id', vid)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (!sv || sv.length === 0) return reply({ ok: true, sent: 0, skipped: 'no recent service' })
+    title = 'טיפול חדש נרשם'
+    text = who + ': ' + carName + ' · ' + (TYPES[String(sv[0].type)] ?? 'טיפול') + ' · ₪' + fmtNum(sv[0].cost) + (sv[0].invoice_path ? ' · עם חשבונית' : '')
+  }
+  const out = await toManagers(admin, v, pub, { title, body: text, url: SITE, tag: 'upd-' + vid + '-' + Date.now() })
+  return reply({ ok: true, ...out })
+}
+
+// התראה למנהלים על טסט וביטוח שעומדים לפוג. הטיימר היומי שולח כשנשארו בדיוק 60, 30, 14, 7, 1 או 0 ימים.
+// מנהל שלוחץ "שלח לי את הרשימה עכשיו" מקבל את כל מה שנשארו לו עד 60 יום (כולל מה שכבר פג).
+const EXPIRY_DAYS = [60, 30, 14, 7, 1, 0]
+async function expiryAlerts(admin: Admin, all: boolean, dry: boolean, v: Vapid, pub: string) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' })
+  const { data: cars } = await admin.from('vehicles').select('plate,model,test_date,insurance_date')
+  const found: { d: number; text: string }[] = []
+  for (const c of cars ?? []) {
+    const docs: [string, unknown][] = [['ביטוח', c.insurance_date], ['טסט', c.test_date]]
+    for (const [label, date] of docs) {
+      if (!date) continue
+      const d = Math.round((Date.parse(String(date)) - Date.parse(today)) / 86400000)
+      if (isNaN(d)) continue
+      if (all ? d > 60 : !EXPIRY_DAYS.includes(d)) continue
+      const when = d < 0 ? 'פג לפני ' + -d + ' ימים' : d === 0 ? 'פג היום' : d === 1 ? 'פג מחר' : 'פג בעוד ' + d + ' ימים'
+      found.push({ d, text: label + ' ' + String(c.model ?? '') + ' ' + String(c.plate ?? '') + ': ' + when })
+    }
+  }
+  found.sort((a, b) => a.d - b.d)
+  if (found.length === 0) return { ok: true, due: 0, sent: 0 }
+  if (dry) return { ok: true, dry: true, due: found.length, lines: found.map((f) => f.text) }
+  const shown = found.slice(0, 4).map((f) => f.text)
+  if (found.length > 4) shown.push('ועוד ' + (found.length - 4))
+  const out = await toManagers(admin, v, pub, { title: 'תוקף ביטוח וטסט מתקרב', body: shown.join('\n'), url: SITE, tag: 'expiry-' + today })
+  return { ok: true, due: found.length, ...out }
+}
+
 const INVOICE_PROMPT = [
   'This is a photo or a PDF file of a receipt or invoice for a vehicle service, repair, tires or parts from an Israeli business.',
   'It is mostly in Hebrew, may be handwritten, and may show several papers (for example an invoice and a credit card slip).',
@@ -342,7 +431,7 @@ Deno.serve(async (req) => {
     const cronSecret = req.headers.get('x-cron-secret')
     if (cronSecret) {
       const { data } = await admin.from('app_secrets').select('value').eq('key', 'cron').maybeSingle()
-      if (!data || data.value !== cronSecret || (mode !== 'cron' && mode !== 'invoice')) {
+      if (!data || data.value !== cronSecret || (mode !== 'cron' && mode !== 'invoice' && mode !== 'expiry')) {
         return reply({ ok: false, error: 'unauthorized' }, 401)
       }
     } else {
@@ -395,6 +484,21 @@ Deno.serve(async (req) => {
         else await drop(s, st)
       }
       return reply({ ok: true, sent })
+    }
+
+    // 2ב. הודעה למנהלים כשנהג מעדכן ק"מ או שומר טיפול (הלקוח קורא אחרי שמירה מוצלחת)
+    if (mode === 'notify') {
+      if (!userId) return reply({ ok: false, error: 'forbidden' }, 403)
+      return await notifyManagers(admin, userId, String(body.kind ?? ''), String(body.vid ?? ''), v, pub)
+    }
+
+    // 2ג. התראות על סיום תוקף טסט וביטוח (טיימר יומי, או מנהל שמבקש את הרשימה עכשיו)
+    if (mode === 'expiry') {
+      if (userId) {
+        const { data: me } = await admin.from('profiles').select('role').eq('id', userId).maybeSingle()
+        if (!me || me.role !== 'manager') return reply({ ok: false, error: 'forbidden' }, 403)
+      }
+      return reply(await expiryAlerts(admin, Boolean(userId) && body.all === true, body.dry === true, v, pub))
     }
 
     // 3. תזכורות לנהגים שלא עדכנו ק"מ (טיימר חודשי, או מנהל שלוחץ "שלח עכשיו")

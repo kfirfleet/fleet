@@ -201,6 +201,10 @@ async function track(uid,force){
  }catch(e){console.warn(e)}
 }
 const FN_PUSH='swift-handler';
+// הודעה למנהלים אחרי ששמרנו עדכון של נהג. לא מחכים לתשובה ושגיאה לא מפריעה לנהג
+function notifyMgr(kind,vid){
+ try{if(!me||me.role!=='driver'||!vid)return;Promise.resolve(sb.functions.invoke(FN_PUSH,{body:{mode:'notify',kind,vid}})).catch(e=>console.warn('notify',e))}catch(e){console.warn('notify',e)}
+}
 const PUSH_OK=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
 const key2buf=k=>Uint8Array.from(atob((k+'='.repeat((4-k.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
 const PUSH_SETUP='ההתראות עדיין לא הוגדרו בשרת. ההוראות במדריך, תחת "התראות על עדכון ק"מ"';
@@ -240,8 +244,12 @@ async function pushEnable(){
 }
 async function drawPush(){
  const el=$('#pushbar');if(!el)return;
- if(!me||me.role!=='driver'){el.innerHTML='';return}
+ if(!me||(me.role!=='driver'&&me.role!=='manager')){el.innerHTML='';return}
  const st=await pushState();
+ if(me.role==='manager'){
+  el.innerHTML=st==='off'?`<div class="card"><b>התראות למנהל</b><br><small>התראה כשנהג מעדכן ק"מ או שומר טיפול, ושני חודשים לפני סיום טסט וביטוח.</small><div class="tags" style="margin-top:10px"><button class="btn sm" data-a="pushon">הפעלת התראות</button></div></div>`:'';
+  return;
+ }
  el.innerHTML=st==='off'?`<div class="card"><b>התראות על עדכון ק"מ</b><br><small>פעם בחודש תקבלו התראה לעדכן את הק"מ של הרכב.</small><div class="tags" style="margin-top:10px"><button class="btn sm" data-a="pushon">הפעלת התראות</button></div></div>`:'';
 }
 function pushBox(){
@@ -250,7 +258,8 @@ function pushBox(){
  const ds=D.profiles.filter(p=>p.role==='driver'),on=new Set(D.push.map(x=>x.user_id));
  const rows=ds.map(p=>`<div class="row"><span>${esc(p.full_name||'ללא שם')}</span><span class="b ${on.has(p.id)?'ok':'warn'}">${on.has(p.id)?'התראות פעילות':'בלי התראות'}</span></div>`).join('');
  return `${h} (${ds.filter(p=>on.has(p.id)).length} מתוך ${ds.length})</h2><div class="card list">${rows||'<small>עוד אין נהגים</small>'}</div>
- <div class="card"><small>ב-1 בכל חודש בבוקר נשלחת התראה לנהגים שלא עדכנו ק"מ ב-20 הימים האחרונים. נהג בלי התראות פעילות מקבל תזכורת רק בוואטסאפ, מכפתור "שלח תזכורת" בסקירה.</small><div class="tags" style="margin-top:10px"><button class="btn sm" data-a="pushnow">שליחה עכשיו</button><button class="btn ghost sm" data-a="pushtest">בדיקה אצלי</button><button class="btn ghost sm" data-a="pushon">הפעלה במכשיר הזה</button></div></div>`;
+ <div class="card"><small>ב-1 בכל חודש בבוקר נשלחת התראה לנהגים שלא עדכנו ק"מ ב-20 הימים האחרונים. נהג בלי התראות פעילות מקבל תזכורת רק בוואטסאפ, מכפתור "שלח תזכורת" בסקירה.</small><div class="tags" style="margin-top:10px"><button class="btn sm" data-a="pushnow">שליחה עכשיו</button><button class="btn ghost sm" data-a="pushtest">בדיקה אצלי</button><button class="btn ghost sm" data-a="pushon">הפעלה במכשיר הזה</button></div></div>
+ <div class="card"><b>התראות אליך כמנהל</b><br><small>${D.push.some(x=>x.user_id===me.id)?'התראות פעילות במכשיר שלך.':'עוד לא הופעלו אצלך. לוחצים "הפעלה במכשיר הזה".'} מקבלים הודעה כל פעם שנהג מעדכן ק"מ או שומר טיפול. בנוסף, פעם ביום בבוקר בודקים ביטוח וטסט, ושולחים התראה 60, 30, 14, 7 ו-1 ימים לפני הסיום וביום הסיום.</small><div class="tags" style="margin-top:10px"><button class="btn sm" data-a="expnow">רשימת ביטוח וטסט עכשיו</button></div></div>`;
 }
 const MAIL_SETUP='לא ניתן לשלוח. בדקו שהפונקציה swift-handler עודכנה. ההוראות במדריך, תחת "חשבוניות להנהלת החשבונות"';
 function mailBox(){
@@ -658,6 +667,18 @@ $$);`;
   body := '{"mode":"cron","dry":true}'::jsonb
 );`;
  const sqlR2=`select status_code, content::text from net._http_response order by id desc limit 1;`;
+ const sqlE=`create extension if not exists pg_cron;
+create extension if not exists pg_net;
+select cron.schedule('fleet-expiry', '0 6 * * *', $$
+  select net.http_post(
+    url := 'https://rodlmlsdgwqyxqaimkfm.supabase.co/functions/v1/swift-handler',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-cron-secret', (select value from public.app_secrets where key = 'cron')
+    ),
+    body := '{"mode":"expiry"}'::jsonb
+  );
+$$);`;
  const sqlM=`create extension if not exists pg_net;
 
 create table if not exists public.invoice_mail (
@@ -696,7 +717,7 @@ drop trigger if exists services_mail_invoice on public.services;
 create trigger services_mail_invoice after insert on public.services
   for each row execute function public.mail_invoice();`;
  const sqlR3=`select status_code, content::text from net._http_response order by id desc limit 3;`;
- const kmFnCode=String.raw`// km-reminders: (1) התראות לטלפון על עדכון ק"מ (Web Push), (2) שליחת חשבוניות להנהלת החשבונות במייל,
+ const kmFnCode=String.raw`// km-reminders: (1) התראות לטלפון (Web Push): תזכורת לנהגים לעדכן ק"מ, הודעה למנהל כשנהג מעדכן ק"מ או שומר טיפול, והתראה למנהל חודשיים לפני סיום טסט וביטוח, (2) שליחת חשבוניות להנהלת החשבונות במייל,
 // (3) קריאה אוטומטית של תמונה או קובץ PDF של חשבונית באמצעות Claude (תאריך, סכום, מוסך, ק"מ), וגם של מסמכי ביטוח וטסט (סכום, תאריך, תוקף) ושל רישיון רכב (מספר, דגם, שנה, תוקף).
 // התראות לא צריכות מפתחות חיצוניים. שליחת מייל עוברת דרך סקריפט קטן ב-Gmail שלך (Google Apps Script),
 // וכתובת הסקריפט נשמרת בסוד MAIL_SCRIPT_URL. הקריאה האוטומטית צריכה סוד בשם ANTHROPIC_API_KEY.
@@ -862,6 +883,95 @@ async function sendInvoice(admin: Admin, serviceId: string) {
 }
 
 // ---------- קריאה אוטומטית של חשבונית (Claude) ----------
+// ---------- הודעות למנהלים (Web Push) ----------
+async function toManagers(admin: Admin, v: Vapid, pub: string, message: unknown) {
+  const { data: mgrs } = await admin.from('profiles').select('id').eq('role', 'manager')
+  const ids = (mgrs ?? []).map((m) => String(m.id))
+  if (ids.length === 0) return { managers: 0, withPush: 0, sent: 0, removed: 0 }
+  const { data: subs } = await admin.from('push_subs').select('id,user_id,endpoint,p256dh,auth').in('user_id', ids)
+  let sent = 0
+  let removed = 0
+  for (const s of (subs ?? []) as Sub[]) {
+    const st = await push(s, message, v, pub)
+    if (st >= 200 && st < 300) sent++
+    else if (st === 404 || st === 410) {
+      await admin.from('push_subs').delete().eq('id', s.id)
+      removed++
+    }
+  }
+  return { managers: ids.length, withPush: (subs ?? []).length, sent, removed }
+}
+const fmtNum = (n: unknown) => Number(n ?? 0).toLocaleString('en-US')
+
+// נהג עדכן ק"מ או שמר טיפול (עם או בלי חשבונית): הודעה לכל המנהלים.
+// הלקוח קורא לכאן אחרי שמירה מוצלחת. הפונקציה בודקת שהרכב של הנהג ושהעדכון באמת נשמר בחמש הדקות האחרונות,
+// והטקסט נבנה כאן ממסד הנתונים (לא ממה שהלקוח שולח).
+async function notifyManagers(admin: Admin, userId: string, kind: string, vid: string, v: Vapid, pub: string) {
+  const { data: me } = await admin.from('profiles').select('role,full_name').eq('id', userId).maybeSingle()
+  if (!me) return reply({ ok: false, error: 'forbidden' }, 403)
+  if (me.role === 'manager') return reply({ ok: true, sent: 0, skipped: 'manager' })
+  if (kind !== 'km' && kind !== 'svc') return reply({ ok: false, error: 'bad kind' }, 400)
+  const { data: car } = await admin.from('vehicles').select('id,plate,model,driver_id').eq('id', vid).maybeSingle()
+  if (!car || car.driver_id !== userId) return reply({ ok: false, error: 'forbidden' }, 403)
+  const since = new Date(Date.now() - 5 * 60000).toISOString()
+  const who = String(me.full_name || 'נהג')
+  const carName = String(car.model ?? '') + ' ' + String(car.plate ?? '')
+  let title = ''
+  let text = ''
+  if (kind === 'km') {
+    const { data: u } = await admin
+      .from('km_updates')
+      .select('km,created_at')
+      .eq('vehicle_id', vid)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (!u || u.length === 0) return reply({ ok: true, sent: 0, skipped: 'no recent update' })
+    title = 'עדכון קילומטראז׳'
+    text = who + ': ' + carName + ' · ' + fmtNum(u[0].km) + ' ק"מ'
+  } else {
+    const { data: sv } = await admin
+      .from('services')
+      .select('type,cost,invoice_path,created_at')
+      .eq('vehicle_id', vid)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (!sv || sv.length === 0) return reply({ ok: true, sent: 0, skipped: 'no recent service' })
+    title = 'טיפול חדש נרשם'
+    text = who + ': ' + carName + ' · ' + (TYPES[String(sv[0].type)] ?? 'טיפול') + ' · ₪' + fmtNum(sv[0].cost) + (sv[0].invoice_path ? ' · עם חשבונית' : '')
+  }
+  const out = await toManagers(admin, v, pub, { title, body: text, url: SITE, tag: 'upd-' + vid + '-' + Date.now() })
+  return reply({ ok: true, ...out })
+}
+
+// התראה למנהלים על טסט וביטוח שעומדים לפוג. הטיימר היומי שולח כשנשארו בדיוק 60, 30, 14, 7, 1 או 0 ימים.
+// מנהל שלוחץ "שלח לי את הרשימה עכשיו" מקבל את כל מה שנשארו לו עד 60 יום (כולל מה שכבר פג).
+const EXPIRY_DAYS = [60, 30, 14, 7, 1, 0]
+async function expiryAlerts(admin: Admin, all: boolean, dry: boolean, v: Vapid, pub: string) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' })
+  const { data: cars } = await admin.from('vehicles').select('plate,model,test_date,insurance_date')
+  const found: { d: number; text: string }[] = []
+  for (const c of cars ?? []) {
+    const docs: [string, unknown][] = [['ביטוח', c.insurance_date], ['טסט', c.test_date]]
+    for (const [label, date] of docs) {
+      if (!date) continue
+      const d = Math.round((Date.parse(String(date)) - Date.parse(today)) / 86400000)
+      if (isNaN(d)) continue
+      if (all ? d > 60 : !EXPIRY_DAYS.includes(d)) continue
+      const when = d < 0 ? 'פג לפני ' + -d + ' ימים' : d === 0 ? 'פג היום' : d === 1 ? 'פג מחר' : 'פג בעוד ' + d + ' ימים'
+      found.push({ d, text: label + ' ' + String(c.model ?? '') + ' ' + String(c.plate ?? '') + ': ' + when })
+    }
+  }
+  found.sort((a, b) => a.d - b.d)
+  if (found.length === 0) return { ok: true, due: 0, sent: 0 }
+  if (dry) return { ok: true, dry: true, due: found.length, lines: found.map((f) => f.text) }
+  const shown = found.slice(0, 4).map((f) => f.text)
+  if (found.length > 4) shown.push('ועוד ' + (found.length - 4))
+  const out = await toManagers(admin, v, pub, { title: 'תוקף ביטוח וטסט מתקרב', body: shown.join('\n'), url: SITE, tag: 'expiry-' + today })
+  return { ok: true, due: found.length, ...out }
+}
+
 const INVOICE_PROMPT = [
   'This is a photo or a PDF file of a receipt or invoice for a vehicle service, repair, tires or parts from an Israeli business.',
   'It is mostly in Hebrew, may be handwritten, and may show several papers (for example an invoice and a credit card slip).',
@@ -1040,7 +1150,7 @@ Deno.serve(async (req) => {
     const cronSecret = req.headers.get('x-cron-secret')
     if (cronSecret) {
       const { data } = await admin.from('app_secrets').select('value').eq('key', 'cron').maybeSingle()
-      if (!data || data.value !== cronSecret || (mode !== 'cron' && mode !== 'invoice')) {
+      if (!data || data.value !== cronSecret || (mode !== 'cron' && mode !== 'invoice' && mode !== 'expiry')) {
         return reply({ ok: false, error: 'unauthorized' }, 401)
       }
     } else {
@@ -1095,6 +1205,21 @@ Deno.serve(async (req) => {
       return reply({ ok: true, sent })
     }
 
+    // 2ב. הודעה למנהלים כשנהג מעדכן ק"מ או שומר טיפול (הלקוח קורא אחרי שמירה מוצלחת)
+    if (mode === 'notify') {
+      if (!userId) return reply({ ok: false, error: 'forbidden' }, 403)
+      return await notifyManagers(admin, userId, String(body.kind ?? ''), String(body.vid ?? ''), v, pub)
+    }
+
+    // 2ג. התראות על סיום תוקף טסט וביטוח (טיימר יומי, או מנהל שמבקש את הרשימה עכשיו)
+    if (mode === 'expiry') {
+      if (userId) {
+        const { data: me } = await admin.from('profiles').select('role').eq('id', userId).maybeSingle()
+        if (!me || me.role !== 'manager') return reply({ ok: false, error: 'forbidden' }, 403)
+      }
+      return reply(await expiryAlerts(admin, Boolean(userId) && body.all === true, body.dry === true, v, pub))
+    }
+
     // 3. תזכורות לנהגים שלא עדכנו ק"מ (טיימר חודשי, או מנהל שלוחץ "שלח עכשיו")
     if (mode !== 'cron' && mode !== 'now') return reply({ ok: false, error: 'bad mode' }, 400)
     if (mode === 'now') {
@@ -1135,7 +1260,8 @@ Deno.serve(async (req) => {
     console.error(e)
     return reply({ ok: false, error: String(e) }, 500)
   }
-})`;
+})
+`;
  const gsCode=String.raw`// Fleet invoices: receives a request from the fleet site and sends an e-mail from your Gmail.
 function doPost(e) {
   var out = { ok: true };
@@ -1206,6 +1332,16 @@ function doPost(e) {
  <li>לשלוח מיד לכל מי שלא עדכן: ניהול ← נהגים ← "שליחה עכשיו". ברשימה רואים מי בלי התראות פעילות. להם שולחים תזכורת בוואטסאפ מהסקירה.</li>
  <li>בדיקה של הטיימר עצמו (בלי לשלוח כלום): מריצים את הקטע הראשון, מחכים כמה שניות, ואז את השני. אמור להופיע status_code 200 ותוכן שמתחיל ב-{"ok":true. ${sqlL}${pre(sqlR1)}${pre(sqlR2)}</li>
  <li>אם מופיע 401: המתג Verify JWT עדיין דלוק (שלב 4). אם מופיע 500 עם rpc: לא הורץ שלב 2.</li></ol></details>
+ <details><summary>התראות למנהל: עדכוני נהגים, וסיום טסט וביטוח</summary><ol>
+ <li>מה זה עושה: (1) כל פעם שנהג שומר עדכון ק"מ או טיפול (עם חשבונית או בלי), מגיעה למנהל התראה לטלפון עם שם הנהג, הרכב והפרטים. (2) פעם ביום בבוקר (6:00) האתר בודק את תאריכי הביטוח והטסט, ושולח התראה למנהל כשנשארו 60, 30, 14, 7 או 1 ימים, וביום הסיום עצמו. כל זה בלי עלות. ההתראות עובדות רק בטלפון שהופעלו בו התראות, ואם המנהלים הם כמה, כולם מקבלים.</li>
+ <li>תנאי: כבר הוגדרו התראות על עדכון ק"מ (הסעיף שלמעלה, שלבים 2 ו-4).</li>
+ <li>שלב 1: מעדכנים את הקוד של הפונקציה swift-handler: Edge Functions ← swift-handler ← לשונית Code, מוחקים את כל הקוד ומדביקים את הקוד העדכני מהקטע "התראות על עדכון ק"מ" (שלב 3 שם), ואז Deploy updates. ${L(sb0+'/functions','פתיחת Edge Functions')}</li>
+ <li>שלב 2, חשוב: בלשונית Settings בודקים שהמתג Verify JWT with legacy secret כבוי (אפור), ואם הוא דלוק מכבים ולוחצים Save changes.</li>
+ <li>שלב 3: ב-SQL Editor מריצים את הקטע הבא (פעם אחת). אמור להופיע Success. ${sqlL}${pre(sqlE)}</li>
+ <li>שלב 4: בטלפון שלך, ניהול ← נהגים ← "התראות אליך כמנהל": לוחצים "הפעלה במכשיר הזה" ומאשרים. ${go('mng','sec-push','מעבר להתראות')}</li>
+ <li>שלב 5: בודקים עם "רשימת ביטוח וטסט עכשיו". מגיעה אליך התראה עם כל הרכבים שהביטוח או הטסט שלהם פגו או יפוגו בתוך 60 יום. אם אין כאלה, יופיע על המסך שאין.</li>
+ <li>באייפון, התראות עובדות רק אחרי שהאפליקציה מותקנת במסך הבית (iOS 16.4 ומעלה).</li>
+ <li>התאריכים נלקחים מהשדות "תוקף ביטוח" ו"תאריך טסט" של כל רכב. רכב בלי תאריך לא יתריע.</li></ol></details>
  <details><summary>קריאת חשבוניות אוטומטית</summary><ol>
  <li>הנהג בוחר רק סוג טיפול ומצלם את החשבונית (או בוחר קובץ מהמכשיר). האתר קורא ממנה את התאריך, הסכום, שם המוסך והק"מ, ושומר לבד. אם אין ק"מ בחשבונית, נלקח הק"מ האחרון של הרכב.</li>
  <li>קובצי PDF: אפשר גם לבחור קובץ PDF שהגיע במייל ונשמר במכשיר (עד 4MB), והאתר קורא גם אותו. הקובץ נשמר עם הטיפול או התשלום, וכשנשלחת חשבונית להנהלת החשבונות היא מצורפת כ-PDF. זה דורש שקוד swift-handler מעודכן לגרסה שבמדריך (שלב 3 למטה). אם ההעלאה נכשלת עם ההודעה "האחסון לא מקבל קובצי PDF", זה אומר שהתיקייה invoices מתירה רק תמונות. מתקנים עם הפקודה הזו ב-SQL Editor (ומריצים Run): ${sqlL}${pre(sqlPdf)}</li>
@@ -1364,7 +1500,7 @@ function svcManual(f,r,msg){
 }
 const H={
  async login(o){const{error}=await sb.auth.signInWithPassword({email:o.email.trim().toLowerCase(),password:o.password});if(error){console.error(error);return[0,error.name==='AuthRetryableFetchError'?'אין חיבור לשרת. פתח את האתר בכתובת רגילה בדפדפן':'אימייל או סיסמה שגויים']}await start();return[1,'']},
- async km(o){const v=byId(o.vid);if(v&&+o.km>v.km+JUMP)return[0,jumpMsg()];const{error}=await sb.from('km_updates').insert({vehicle_id:o.vid,km:+o.km});return res(error,'הק"מ עודכן')},
+ async km(o){const v=byId(o.vid);if(v&&+o.km>v.km+JUMP)return[0,jumpMsg()];const{error}=await sb.from('km_updates').insert({vehicle_id:o.vid,km:+o.km});if(!error)notifyMgr('km',o.vid);return res(error,'הק"מ עודכן')},
  async svc(o,f){
   const m=me.role==='manager',v=byId(o.vid),manual=o.manual==='1';
   const rf=o.receipt&&o.receipt.size?o.receipt:(o.receipt2&&o.receipt2.size?o.receipt2:null);
@@ -1396,11 +1532,13 @@ const H={
    const row={vehicle_id:o.vid,type:o.type,service_date:r.date||today(),km:r.km??(v?v.km:0),cost:r.cost,garage:r.garage,invoice_path:path};
    const{error}=await sb.from('services').insert(row);
    if(error){console.error(error);svcManual(f,r,'הטיפול לא נשמר. בדקו את הפרטים ונסו שוב.');return[0,'']}
+   notifyMgr('svc',o.vid);
    return[1,`נשמר: ₪${fmt(row.cost)}${row.garage?' · '+row.garage:''} · ${fd(row.service_date)}`];
   }
   if(!o.date||o.km===''||o.km==null)return[0,'צריך למלא תאריך וק"מ'];
   if(!m&&v&&+o.km>v.km+JUMP)return[0,jumpMsg()];
   const{error}=await sb.from('services').insert({vehicle_id:o.vid,type:o.type,service_date:o.date,km:+o.km,cost:+o.cost||0,garage:o.garage||null,invoice_path:path});
+  if(!error)notifyMgr('svc',o.vid);
   return res(error,'הטיפול נשמר')
  },
  async svcedit(o){
@@ -1560,6 +1698,11 @@ document.addEventListener('click',async e=>{
  if(a==='pushtest'){
   b.disabled=true;const{data,error}=await sb.functions.invoke(FN_PUSH,{body:{mode:'test'}});b.disabled=false;
   toast(error||!data||!data.ok?PUSH_SETUP:data.sent?'נשלחה התראת בדיקה':'אין התראות פעילות במכשיר הזה. לוחצים "הפעלה במכשיר הזה"',4000);
+ }
+ if(a==='expnow'){
+  b.disabled=true;const{data,error}=await sb.functions.invoke(FN_PUSH,{body:{mode:'expiry',all:true}});b.disabled=false;
+  if(error||!data||!data.ok){toast(PUSH_SETUP,4000);return}
+  toast(!data.due?'אין ביטוח או טסט שפג בתוך 60 יום':!data.sent?`יש ${data.due} מסמכים לטיפול, אבל אין לך התראות פעילות. לוחצים "הפעלה במכשיר הזה"`:`נשלחה אליך רשימה של ${data.due} מסמכים`,5000);
  }
  if(a==='pushnow'){
   if(!confirm('לשלוח עכשיו התראה לכל הנהגים שלא עדכנו ק"מ ב-20 הימים האחרונים?'))return;
