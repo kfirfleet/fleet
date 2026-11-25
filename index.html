@@ -315,10 +315,21 @@ function svcList(l,showVeh,empty){
 }
 const ySvcs=y=>D.services.filter(s=>new Date(s.service_date).getFullYear()===y);
 const EXP={insurance:'ביטוח',test:'טסט'};
-const expYear=(l,y)=>l.filter(x=>new Date(x.expense_date).getFullYear()===y);
+// שנת ההוצאה: אם נרשמה תקופת כיסוי, השנה שבה נמצאת רוב התקופה (אמצע התקופה). בלי תקופה: שנת התשלום.
+// תקופה עם סוף בלבד נחשבת שנה שלמה שנגמרת בתאריך הסיום, ועם תחילה בלבד: שנה שלמה מהתחילה.
+function expYr(x){
+ const pd=s=>{if(!s)return null;const d=new Date(s);return isNaN(d)?null:d};
+ let a=pd(x.period_start),b=pd(x.period_end);
+ if(!a&&!b)return new Date(x.expense_date).getFullYear();
+ if(!b){b=new Date(a);b.setUTCFullYear(b.getUTCFullYear()+1)}
+ if(!a||a>b){a=new Date(b);a.setUTCFullYear(a.getUTCFullYear()-1)}
+ return new Date((a.getTime()+b.getTime())/2).getUTCFullYear();
+}
+const expYear=(l,y)=>l.filter(x=>expYr(x)===y);
+const perTxt=x=>x.period_start&&x.period_end?`${fd(x.period_start)}–${fd(x.period_end)}`:x.period_end?'עד '+fd(x.period_end):x.period_start?'מ-'+fd(x.period_start):'';
 const sumA=(l,k)=>l.reduce((t,x)=>t+Number(x[k]||0),0);
 function expList(l,showVeh,empty){
- return `<div class="card list">${l.map(x=>{const v=byId(x.vehicle_id)||{model:'?',plate:''};return `<div class="row"><span>${fd(x.expense_date)}${showVeh?' · '+vname(v):''}<br><small>${EXP[x.kind]||esc(x.kind)}${x.note?' · '+esc(x.note):''}</small></span><span class="tags"><b>₪${fmt(x.amount)}</b>${x.invoice_path?`<button type="button" class="btn ghost sm" data-a="rc" data-p="${esc(x.invoice_path)}">מסמך</button>`:''}<button type="button" class="btn ghost sm" data-a="expedit" data-id="${x.id}">עריכה</button></span></div>`}).join('')||`<div class="row">${empty||'עוד לא נרשמו תשלומי ביטוח וטסט'}</div>`}</div>`;
+ return `<div class="card list">${l.map(x=>{const v=byId(x.vehicle_id)||{model:'?',plate:''};return `<div class="row"><span>${fd(x.expense_date)}${showVeh?' · '+vname(v):''}<br><small>${EXP[x.kind]||esc(x.kind)}${x.note?' · '+esc(x.note):''}${perTxt(x)?' · תקופה: '+perTxt(x):''}${expYr(x)!==new Date(x.expense_date).getFullYear()?' · נספר ל-'+expYr(x):''}</small></span><span class="tags"><b>₪${fmt(x.amount)}</b>${x.invoice_path?`<button type="button" class="btn ghost sm" data-a="rc" data-p="${esc(x.invoice_path)}">מסמך</button>`:''}<button type="button" class="btn ghost sm" data-a="expedit" data-id="${x.id}">עריכה</button></span></div>`}).join('')||`<div class="row">${empty||'עוד לא נרשמו תשלומי ביטוח וטסט'}</div>`}</div>`;
 }
 function expBox(v){
  if(D.exp===null)return `<h2 id="sec-exp">ביטוח וטסט</h2><div class="card"><small>כדי לרשום עלות ביטוח וטסט צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "ביטוח וטסט לכל רכב".</small></div>`;
@@ -333,9 +344,10 @@ function expBox(v){
  <label>סוג<select name="kind" required>${Object.entries(EXP).map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}</select></label>
  <label>תאריך תשלום<input type="date" name="date" value="${today()}" required></label>
  <label>סכום (₪)<input type="number" name="amount" min="0" step="any" inputmode="decimal" required></label>
- <label>תוקף חדש (לא חובה)<input type="date" name="until"></label>
+ <label>תחילת התקופה (לא חובה)<input type="date" name="from"></label>
+ <label>סוף התקופה (תוקף חדש, לא חובה)<input type="date" name="until"></label>
  <label>הערה (לא חובה)<input name="note" maxlength="80" placeholder="למשל: ביטוח מקיף, או תשלום 1 מתוך 12"></label>
- <p class="note">אם ממלאים תוקף חדש, תוקף הביטוח או הטסט של הרכב מתעדכן אוטומטית. לא נשלח מייל להנהלת החשבונות.</p>
+ <p class="note">התקופה היא התקופה שהתשלום מכסה. ההוצאה נספרת לשנה שבה נמצאת רוב התקופה: ביטוח מ-15.12.2025 עד 14.12.2026 נספר ל-2026. בלי תקופה, ההוצאה נספרת לפי תאריך התשלום. אם ממלאים סוף תקופה, תוקף הביטוח או הטסט של הרכב מתעדכן אוטומטית. לא נשלח מייל להנהלת החשבונות.</p>
  <button class="btn">שמירת תשלום</button></form></details>`;
 }
 function viewHist(){
@@ -532,6 +544,8 @@ create policy app_installs_update on public.app_installs for update to authentic
   created_at timestamptz not null default now()
 );
 alter table public.vehicle_expenses add column if not exists invoice_path text;
+alter table public.vehicle_expenses add column if not exists period_start date;
+alter table public.vehicle_expenses add column if not exists period_end date;
 create index if not exists vehicle_expenses_vehicle_idx on public.vehicle_expenses (vehicle_id);
 alter table public.vehicle_expenses enable row level security;
 grant select, insert, update, delete on public.vehicle_expenses to authenticated;
@@ -1201,6 +1215,7 @@ function doPost(e) {
  <li>פעם אחת בלבד: ב-SQL Editor מריצים את הקטע הבא. ${sqlL}${pre(sqlX)}</li>
  <li>אחרי זה: בסקירה לוחצים על הרכב. בקטע "ביטוח וטסט" לוחצים "רישום תשלום ביטוח או טסט", בוחרים סוג, תאריך וסכום, ושומרים. אם ממלאים גם "תוקף חדש", תוקף הביטוח או הטסט של הרכב מתעדכן ולא צריך לעדכן אותו בנפרד.</li>
  <li>קריאה אוטומטית של מסמך: בטופס התשלום מצלמים את המסמך (פוליסה, קבלה, אגרת רישוי או רישיון רכב) או בוחרים קובץ שנשמר במכשיר (תמונה, או PDF שהגיע במייל), והאתר ממלא לבד את הסוג, הסכום, תאריך התשלום, התוקף וההערה. תמיד בודקים את הפרטים לפני השמירה. המסמך נשמר עם התשלום, ואפשר לפתוח אותו מהרשימה בכפתור "מסמך". אם כבר הועלה צילום רישיון לרכב (ניהול ← רכבים ← רישיון רכב), יש בטופס גם כפתור "קריאה מרישיון הרכב ששמור במערכת", שקורא ממנו את התוקף (ואת הסכום, אם מופיע) בלי להעלות שוב. במקרה כזה התשלום נשמר בלי מסמך מצורף. זה דורש שהקריאה האוטומטית של חשבוניות כבר מוגדרת, ושקוד swift-handler מעודכן לגרסה שבמדריך ("קריאת חשבוניות אוטומטית", שלב 3).</li>
+ <li>תקופת הביטוח: בטופס התשלום ממלאים "תחילת התקופה" ו"סוף התקופה" (התקופה שהתשלום מכסה). התקופה מוצגת ברשימה. ההוצאה נספרת לשנה שבה נמצאת רוב התקופה, כך שביטוח מ-15.12.2025 עד 14.12.2026 נספר ל-2026. בלי תקופה, ההוצאה נספרת לפי תאריך התשלום. אם ההוצאה נספרת לשנה אחרת מתאריך התשלום, ברשימה מופיע "נספר ל-...". אם רושמים רק סוף תקופה, נחשבת שנה שלמה שנגמרת בו. לתשלומים שכבר נרשמו אפשר להוסיף תקופה בכפתור "עריכה". אם מופיעה הודעה שצריך להריץ פקודה, מריצים שוב את הקטע שבצעד "פעם אחת בלבד" למעלה (הוא בטוח להרצה חוזרת).</li>
  <li>ביטוח בתשלומים: אפשר לרשום כל תשלום בנפרד (ובהערה, למשל "תשלום 1 מתוך 12"), או לרשום את הסכום השנתי כולו ביום התשלום הראשון.</li>
  <li>תיקון או מחיקה: ליד כל תשלום ברשימה יש כפתור "עריכה", ובתוכו גם "מחיקת התשלום".</li>
  <li>סיכומים: בדף הרכב "הוצאות השנה" ו"סך כל ההוצאות" כוללים טיפולים, ביטוח וטסט. בסקירה הכרטיס "הוצאות השנה" כולל את כל הצי, ולחיצה עליו מציגה את הפירוט.</li></ol></details>
@@ -1255,7 +1270,7 @@ function res(e,ok){
 }
 function expErr(e){
  console.error(e);const m=e.message||'';
- return[0,m.includes('vehicle_expenses')||m.includes('invoice_path')||e.code==='42P01'||e.code==='PGRST205'?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "ביטוח וטסט לכל רכב"':'השמירה נכשלה, נסה שוב'];
+ return[0,m.includes('vehicle_expenses')||m.includes('invoice_path')||m.includes('period_')||e.code==='42P01'||e.code==='PGRST205'?'צריך להריץ פקודה אחת ב-Supabase. ההוראות במדריך, תחת "ביטוח וטסט לכל רכב"':'השמירה נכשלה, נסה שוב'];
 }
 function shrink(file,max=1600){
  return new Promise((ok,no)=>{
@@ -1413,7 +1428,10 @@ const H={
    if(ue){console.error(ue);return[0,upMsg(ue,f._doc,'מסמך')]}
    path=p;
   }
+  if(o.from&&o.until&&o.from>o.until)return[0,'תחילת התקופה חייבת להיות לפני הסוף'];
   const row={vehicle_id:o.vid,kind:o.kind,expense_date:o.date,amount,note:(o.note||'').trim()||null};
+  if(o.from)row.period_start=o.from;
+  if(o.until)row.period_end=o.until;
   if(path)row.invoice_path=path;
   const{error}=await sb.from('vehicle_expenses').insert(row);
   if(error){if(path)sb.storage.from('invoices').remove([path]).catch(()=>{});return expErr(error)}
@@ -1429,7 +1447,10 @@ const H={
   if(!o.id||!EXP[o.kind])return[0,'סוג ההוצאה לא תקין'];
   if(!o.date)return[0,'צריך למלא תאריך'];
   const amount=+o.amount;if(!(amount>0)||amount>=1e8)return[0,'צריך למלא סכום גדול מאפס'];
-  const{data,error}=await sb.from('vehicle_expenses').update({kind:o.kind,expense_date:o.date,amount,note:(o.note||'').trim()||null}).eq('id',o.id).select('id');
+  if(o.from&&o.until&&o.from>o.until)return[0,'תחילת התקופה חייבת להיות לפני הסוף'];
+  const old=(D.exp||[]).find(y=>y.id===o.id)||{},upd={kind:o.kind,expense_date:o.date,amount,note:(o.note||'').trim()||null};
+  if('period_end' in old||o.from||o.until){upd.period_start=o.from||null;upd.period_end=o.until||null}
+  const{data,error}=await sb.from('vehicle_expenses').update(upd).eq('id',o.id).select('id');
   if(error)return expErr(error);
   if(!data||!data.length)return[0,'השינוי לא נשמר. ייתכן שחסרה הרשאה במסד הנתונים'];
   $('#ed').classList.remove('on');
@@ -1534,6 +1555,8 @@ document.addEventListener('click',async e=>{
   <label>סוג<select name="kind" required>${Object.entries(EXP).map(([k,t])=>`<option value="${k}"${k===x.kind?' selected':''}>${t}</option>`).join('')}</select></label>
   <label>תאריך תשלום<input type="date" name="date" value="${esc(x.expense_date)}" required></label>
   <label>סכום (₪)<input type="number" name="amount" min="0" step="any" inputmode="decimal" value="${esc(x.amount)}" required></label>
+  <label>תחילת התקופה (לא חובה)<input type="date" name="from" value="${esc(x.period_start||'')}"></label>
+  <label>סוף התקופה (לא חובה)<input type="date" name="until" value="${esc(x.period_end||'')}"></label>
   <label>הערה<input name="note" maxlength="80" value="${esc(x.note||'')}"></label>
   <p class="note">שינוי כאן לא משנה את תוקף הביטוח או הטסט של הרכב. את התוקף מעדכנים ב"עריכת פרטי הרכב".</p>
   <button class="btn">שמירת שינויים</button><button type="button" class="btn ghost" data-a="edclose">ביטול</button><button type="button" class="btn ghost" style="color:var(--bad);border-color:var(--bad)" data-a="expdel" data-id="${esc(x.id)}">מחיקת התשלום</button></form>`;
