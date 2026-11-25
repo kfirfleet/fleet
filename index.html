@@ -151,7 +151,7 @@ function docs(v){
  const o=[];
  [['טסט',v.test_date],['ביטוח',v.insurance_date]].forEach(([n,dt])=>{
   if(!dt)return;const days=Math.round((new Date(dt)-Date.now())/DAY);
-  if(days<=30)o.push({lvl:days<0?2:1,txt:days<0?`${n} פג לפני ${-days} ימים`:`${n} פג בעוד ${days} ימים`});
+  if(days<=60)o.push({lvl:days<0?2:1,txt:days<0?`${n} פג לפני ${-days} ימים`:`${n} פג בעוד ${days} ימים`});
  });
  return o;
 }
@@ -266,13 +266,6 @@ function attention(){
   if(stale)items.push({lvl:1,txt:`ק"מ לא עודכן ${age} ימים`});
   return{v,items,age,stale,lvl:Math.max(0,...items.map(i=>i.lvl))};
  }).filter(x=>x.items.length).sort((a,b)=>b.lvl-a.lvl||b.age-a.age);
-}
-function instLine(){
- if(!Array.isArray(D.inst))return '';
- const ds=D.profiles.filter(p=>p.role==='driver');if(!ds.length)return '';
- const n=ds.filter(p=>(D.inst.find(x=>x.user_id===p.id)||{}).installed).length;
- if(n>=ds.length)return '';
- return `<button type="button" class="card stat-link instline" data-a="tab" data-v="mng" data-to="sec-inst"><b>התקנת האפליקציה: ${n} מתוך ${ds.length} נהגים</b><br><small>לפירוט ולשליחת הוראות</small></button>`;
 }
 function installBox(){
  if(D.inst===null)return `<h2 id="sec-inst">התקנת האפליקציה</h2><div class="card"><small>כדי לראות מי התקין את האפליקציה צריך ליצור טבלה אחת ב-Supabase. ההוראות במדריך, תחת "מי התקין את האפליקציה".</small></div>`;
@@ -428,7 +421,7 @@ function viewDash(){
   return `<div class="row"><button type="button" class="rowlink" data-a="veh" data-id="${x.v.id}"><b>${vname(x.v)}</b><small>${drv(x.v.driver_id)}</small></button><span class="tags">${x.items.map(i=>`<span class="b ${cls(i.lvl)}">${i.txt}</span>`).join('')}${w?`<a class="btn sm" href="${w}" target="_blank" rel="noopener">שלח תזכורת</a>`:''}</span></div>`}).join('');
  const cards=D.vehicles.map(v=>{const s=svcStatus(v);return `<button type="button" class="card vcard" data-a="veh" data-id="${v.id}"><b>${esc(v.model)}</b><small>${esc(v.plate)}</small><small>${drv(v.driver_id)}</small><span class="vkm">${fmt(v.km)} ק"מ</span><span class="tags"><span class="b ${cls(s.lvl)}">${s.short||s.txt}</span>${docs(v).map(x=>`<span class="b ${cls(x.lvl)}">${x.txt}</span>`).join('')}</span></button>`}).join('');
  return `<div class="stats"><div class="card"><small>כלי רכב</small><b>${D.vehicles.length}</b></div><button type="button" class="card stat-link" data-a="attn" aria-expanded="${ui.att?'true':'false'}"><small>דורשים תשומת לב</small><b>${at.length}</b><small>${ui.att?'לחיצה לסגירה':'לחיצה לפתיחה'}</small></button><button type="button" class="card stat-link" data-a="costyear" style="grid-column:1/-1"><small>הוצאות השנה</small><b>₪${fmt(cost)}</b><small>טיפולים ₪${fmt(yS)}${D.exp!==null?` · ביטוח ₪${fmt(yI)} · טסט ₪${fmt(yT)}`:''}${gN?`<br>${gN===1?'תשלום אחד ממתין':gN+' תשלומים ממתינים'} לבדיקה`:''}<br>לחיצה לפירוט</small></button></div>
- ${ui.att?`<h2>דורש תשומת לב</h2>${at.length?`<div class="card list">${rows}</div>`:'<div class="card">הכול תקין, אין התראות פתוחות</div>'}`:''}${instLine()}
+ ${ui.att?`<h2>דורש תשומת לב</h2>${at.length?`<div class="card list">${rows}</div>`:'<div class="card">הכול תקין, אין התראות פתוחות</div>'}`:''}
  <h2>הצי <small>(לחיצה על רכב פותחת את כל הפרטים עליו)</small></h2>${cards?`<div class="fleet">${cards}</div>`:'<div class="card">עוד לא נוספו רכבים</div>'}
  ${D.vehicles.length?'<div style="margin-top:14px"><button type="button" class="btn ghost" data-a="report">רשימת רכבים לביקורת (להדפסה ולאקסל)</button></div>':''}`;
 }
