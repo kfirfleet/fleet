@@ -415,15 +415,51 @@ function repRows(){
    T(dmy(v.insurance_date),v.insurance_date?dmy(v.insurance_date):'—'),T(ie.t,ie.t,ie.l)];
  });
 }
-function repCsv(){
- const cell=x=>{let t=String(x??'');if(/^[=+\-@\t\r]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"'};
- return '﻿'+[REPH,...repRows().map(r=>r.map(c=>c.c))].map(r=>r.map(cell).join(',')).join('\r\n');
+// קובץ אקסל אמיתי (xlsx) שנראה כמו הטבלה במסך: כותרת, מסגרות, צבעי סטטוס, מימין לשמאל. נבנה בדפדפן בלי ספריות.
+function repXlsx(){
+ const rows=repRows(),N=REPH.length,X=t=>String(t??'').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+ const col=i=>{let n='';i++;while(i){const m=(i-1)%26;n=String.fromCharCode(65+m)+n;i=(i-m-1)/26}return n};
+ const str=(r,i,st,t)=>`<c r="${col(i)}${r}" s="${st}" t="inlineStr"><is><t xml:space="preserve">${X(t)}</t></is></c>`;
+ const KM=new Set([4,7,8]),YR=2;
+ const cell=(r,i,c)=>{if(typeof c.c==='number'&&isFinite(c.c)&&(KM.has(i)||i===YR))return `<c r="${col(i)}${r}" s="${KM.has(i)?5:4}"><v>${c.c}</v></c>`;return str(r,i,c.l===2?7:c.l===1?6:4,c.s)};
+ const w=REPH.map((h,i)=>Math.min(34,Math.max(10,...rows.map(r=>String(r[i].s).length+2),Math.ceil(h.length/2)+2)));
+ const meta=`הופקה בתאריך ${dmy(new Date().toISOString())} · ${rows.length} כלי רכב${me&&me.full_name?' · '+me.full_name:''}`,last=col(N-1),end=rows.length+3;
+ const sheet=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${last}${end}"/><sheetViews><sheetView rightToLeft="1" workbookViewId="0"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${w.map((x,i)=>`<col min="${i+1}" max="${i+1}" width="${x}" customWidth="1"/>`).join('')}</cols><sheetData><row r="1" ht="22" customHeight="1">${str(1,0,1,'רשימת רכבים לביקורת')}</row><row r="2">${str(2,0,2,meta)}</row><row r="3">${REPH.map((h,i)=>str(3,i,3,h)).join('')}</row>${rows.map((r,k)=>`<row r="${k+4}">${r.map((c,i)=>cell(k+4,i,c)).join('')}</row>`).join('')}</sheetData>${rows.length?`<autoFilter ref="A3:${last}${end}"/>`:''}<mergeCells count="2"><mergeCell ref="A1:${last}1"/><mergeCell ref="A2:${last}2"/></mergeCells><printOptions horizontalCentered="1"/><pageMargins left="0.4" right="0.4" top="0.4" bottom="0.4" header="0.2" footer="0.2"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`;
+ const bc='<color rgb="FFC8CEC8"/>',B=`<border><left style="thin">${bc}</left><right style="thin">${bc}</right><top style="thin">${bc}</top><bottom style="thin">${bc}</bottom><diagonal/></border>`;
+ const xf=(f,fi,b,n,al)=>`<xf numFmtId="${n}" fontId="${f}" fillId="${fi}" borderId="${b}" xfId="0"${n?' applyNumberFormat="1"':''} applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment ${al}/></xf>`,R='horizontal="right" vertical="top" readingOrder="2"';
+ const font=(b,sz,c)=>`<font>${b?'<b/>':''}<sz val="${sz}"/>${c?`<color rgb="FF${c}"/>`:''}<name val="Arial"/></font>`;
+ const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="6">${font(0,11)}${font(1,14,'0F6B6B')}${font(0,10,'5D6B76')}${font(1,11,'14212B')}${font(1,11,'8A5A00')}${font(1,11,'B3261E')}</fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F3F0"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>${B}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="8"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>${xf(1,0,0,0,'horizontal="right" vertical="center" readingOrder="2"')}${xf(2,0,0,0,R)}${xf(3,2,1,0,'horizontal="center" vertical="center" wrapText="1" readingOrder="2"')}${xf(0,0,1,0,R+' wrapText="1"')}${xf(0,0,1,3,R)}${xf(4,0,1,0,R+' wrapText="1"')}${xf(5,0,1,0,R+' wrapText="1"')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+ const H='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n',OD='http://schemas.openxmlformats.org/officeDocument/2006/relationships',PR='http://schemas.openxmlformats.org/package/2006/relationships',CT='application/vnd.openxmlformats-officedocument.spreadsheetml.';
+ const files=[['[Content_Types].xml',H+`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="${CT}sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="${CT}worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="${CT}styles+xml"/></Types>`],
+  ['_rels/.rels',H+`<Relationships xmlns="${PR}"><Relationship Id="rId1" Type="${OD}/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+  ['xl/workbook.xml',H+`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${OD}"><bookViews><workbookView/></bookViews><sheets><sheet name="רכבים" sheetId="1" r:id="rId1"/></sheets><definedNames>${rows.length?`<definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">'רכבים'!$A$3:$${last}$${end}</definedName>`:''}<definedName name="_xlnm.Print_Titles" localSheetId="0">'רכבים'!$3:$3</definedName></definedNames></workbook>`],
+  ['xl/_rels/workbook.xml.rels',H+`<Relationships xmlns="${PR}"><Relationship Id="rId1" Type="${OD}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="${OD}/styles" Target="styles.xml"/></Relationships>`],
+  ['xl/styles.xml',styles],['xl/worksheets/sheet1.xml',sheet]];
+ return zipStore(files);
 }
+// ZIP בלי דחיסה (stored) עם CRC32, מספיק לקובץ xlsx קטן
+function zipStore(files){
+ const enc=new TextEncoder(),T=zipStore.t||(zipStore.t=Array.from({length:256},(_,n)=>{let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;return c>>>0}));
+ const crc=b=>{let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=T[(c^b[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0};
+ const hdr=(sig,len)=>{const b=new Uint8Array(len),v=new DataView(b.buffer);v.setUint32(0,sig,true);return[b,v]};
+ const parts=[],cen=[];let off=0;
+ for(const[name,text]of files){
+  const nm=enc.encode(name),data=enc.encode(text),c=crc(data);
+  const[l,lv]=hdr(0x04034b50,30);lv.setUint16(4,20,true);lv.setUint16(6,0x800,true);lv.setUint16(12,0x21,true);lv.setUint32(14,c,true);lv.setUint32(18,data.length,true);lv.setUint32(22,data.length,true);lv.setUint16(26,nm.length,true);
+  const[h,hv]=hdr(0x02014b50,46);hv.setUint16(4,20,true);hv.setUint16(6,20,true);hv.setUint16(8,0x800,true);hv.setUint16(14,0x21,true);hv.setUint32(16,c,true);hv.setUint32(20,data.length,true);hv.setUint32(24,data.length,true);hv.setUint16(28,nm.length,true);hv.setUint32(42,off,true);
+  parts.push(l,nm,data);cen.push(h,nm);off+=30+nm.length+data.length;
+ }
+ const cl=cen.reduce((a,b)=>a+b.length,0),[e,ev]=hdr(0x06054b50,22);ev.setUint16(8,files.length,true);ev.setUint16(10,files.length,true);ev.setUint32(12,cl,true);ev.setUint32(16,off,true);
+ return new Blob([...parts,...cen,e],{type:CT_XLSX});
+}
+const CT_XLSX='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 function viewReport(){
  const rows=repRows();
  return `<h2 style="margin-top:0">רשימת רכבים לביקורת</h2>
  <p class="repmeta">הופקה בתאריך ${dmy(new Date().toISOString())} · ${rows.length} כלי רכב${me&&me.full_name?' · '+esc(me.full_name):''}</p>
- <div class="repbar noprint"><button type="button" class="btn" data-a="repcsv">הורדה לאקסל (CSV)</button><button type="button" class="btn ghost" data-a="repprint">הדפסה / שמירה כ-PDF</button><button type="button" class="btn ghost" data-a="tab" data-v="dash">חזרה לסקירה</button></div>
+ <div class="repbar noprint"><button type="button" class="btn" data-a="repxlsx">הורדה לאקסל</button><button type="button" class="btn ghost" data-a="repprint">הדפסה / שמירה כ-PDF</button><button type="button" class="btn ghost" data-a="tab" data-v="dash">חזרה לסקירה</button></div>
  ${rows.length?`<div class="card scroll"><table class="rep"><tr>${REPH.map(h=>`<th>${esc(h)}</th>`).join('')}</tr>${rows.map(r=>`<tr>${r.map(c=>`<td${c.l?` class="l${c.l}"`:''}>${esc(c.s)}</td>`).join('')}</tr>`).join('')}</table></div>`:'<div class="card">עוד לא נוספו רכבים</div>'}
  <p class="note noprint">הקובץ נפתח באקסל כרגיל. להדפסה או לשמירה כ-PDF לוחצים על הכפתור השני ובוחרים "שמירה כ-PDF" כיעד ההדפסה.</p>`;
 }
@@ -1745,7 +1781,7 @@ document.addEventListener('click',async e=>{
  if(a==='tab'){closeVeh();ui.tab=b.dataset.v;ui.year=null;const to=b.dataset.to;if(b.dataset.v==='mng'&&SUBOF[to])ui.sub=SUBOF[to];render();const t=to&&document.getElementById(to);if(t){const d=t.tagName==='DETAILS'?t:t.closest('details');if(d)d.open=true;t.scrollIntoView()}else window.scrollTo(0,0)}
  if(a==='sub'){ui.sub=b.dataset.v;render();window.scrollTo(0,0)}
  if(a==='report'){ui.tab='rep';render();window.scrollTo(0,0)}
- if(a==='repcsv'){const blob=new Blob([repCsv()],{type:'text/csv;charset=utf-8'}),u=URL.createObjectURL(blob),l=document.createElement('a');l.href=u;l.download='vehicles-'+today()+'.csv';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}
+ if(a==='repxlsx'){const blob=repXlsx(),u=URL.createObjectURL(blob),l=document.createElement('a');l.href=u;l.download='vehicles-'+today()+'.xlsx';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}
  if(a==='repprint')window.print();
  if(a==='attn'){ui.att=!ui.att;render()}
  if(a==='costyear'){ui.tab='hist';ui.year=new Date().getFullYear();render();window.scrollTo(0,0)}
