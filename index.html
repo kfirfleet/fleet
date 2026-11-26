@@ -98,6 +98,7 @@ const num=x=>x===''||x==null?null:Number(x);
 let sb,me=null,ui={tab:'dash'},D={profiles:[],vehicles:[],services:[],exp:[],settings:{service_interval_km:10000,service_interval_months:12}};
 const vname=v=>`${esc(v.model)} · ${esc(v.plate)}`;
 const drv=id=>esc((D.profiles.find(p=>p.id===id)||{}).full_name||'לא משויך');
+const drvOpts=sel=>'<option value="">ללא</option>'+D.profiles.filter(p=>p.role==='driver'||p.role==='manager').sort((x,y)=>(x.role==='manager')-(y.role==='manager')).map(p=>`<option value="${p.id}"${p.id===sel?' selected':''}>${esc(p.full_name||'')}${p.role==='manager'?' (מנהל)':''}</option>`).join('');
 const byId=id=>D.vehicles.find(v=>v.id===id);
 const isViewer=()=>!!me&&me.role==='viewer';
 // נהג שהמנהל נתן לו גם לראות את הסקירה (profiles.see_all): לשונית נוספת, לקריאה בלבד
@@ -466,7 +467,7 @@ function viewVeh(v){
  const sum=l=>l.reduce((t,x)=>t+Number(x.cost||0),0);
  const exs=(D.exp||[]).filter(x=>x.vehicle_id===v.id),exY=expYear(exs,yr),yS=sum(svs.filter(x=>new Date(x.service_date).getFullYear()===yr)),yI=sumA(exY.filter(x=>x.kind==='insurance'),'amount'),yT=sumA(exY.filter(x=>x.kind==='test'),'amount');
  const stale=!!v.driver_id&&age>=REM_DAYS,w=stale&&p&&p.phone?waLink(p.phone,p.full_name||''):'';
- const opts='<option value="">ללא</option>'+D.profiles.filter(x=>x.role==='driver').map(x=>`<option value="${x.id}"${x.id===v.driver_id?' selected':''}>${esc(x.full_name)}</option>`).join('');
+ const opts=drvOpts(v.driver_id);
  return `<button type="button" class="btn ghost sm" data-a="back">‹ חזרה לסקירה</button>
  <div class="card" style="margin-top:12px"><h3>${vname(v)}</h3><small>שנה ${v.year||'—'} · טסט עד ${fd(v.test_date)} · ביטוח עד ${fd(v.insurance_date)}</small>
  <div class="odo">${digits}<small>ק"מ</small></div>
@@ -499,7 +500,7 @@ const SUBS=[['veh','רכבים'],['drv','נהגים'],['set','הגדרות']];
 const SUBOF={'sec-veh':'veh','sec-assign':'veh','sec-lic':'veh','sec-kmfix':'veh','sec-drivers':'drv','sec-inst':'drv','sec-push':'drv','sec-rules':'set','sec-mail':'set'};
 function viewManage(){
  const drivers=D.profiles.filter(p=>p.role==='driver');
- const opts=sel=>`<option value="">ללא</option>`+drivers.map(p=>`<option value="${p.id}"${p.id===sel?' selected':''}>${esc(p.full_name)}</option>`).join('');
+ const opts=drvOpts;
  const sub=SUBS.some(x=>x[0]===ui.sub)?ui.sub:'veh';
  const bar=`<div class="subtabs">${SUBS.map(([k,t])=>`<button type="button" class="tab ${sub===k?'on':''}" data-a="sub" data-v="${k}">${t}</button>`).join('')}</div>`;
  if(sub==='drv')return bar+`<h2 id="sec-drivers" style="margin-top:0">נהגים</h2><div class="card list">${drivers.map(p=>`<div class="row"><input value="${esc(p.full_name)}" aria-label="שם נהג" placeholder="שם"><input value="${esc(p.phone||'')}" aria-label="טלפון" placeholder="טלפון לוואטסאפ" inputmode="tel"><button class="btn ghost sm" data-a="rename" data-id="${p.id}">שמירה</button></div>`).join('')||'<small>עוד אין נהגים. כדי להוסיף נהג, יוצרים לו משתמש ב-Supabase: Authentication ← Users ← Add user.</small>'}</div>${installBox()}${pushBox()}`;
